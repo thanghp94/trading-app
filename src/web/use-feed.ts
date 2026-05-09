@@ -14,9 +14,12 @@ interface UseFeedOpts {
 export function useFeed({ symbol, timeframe }: UseFeedOpts) {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [status, setStatus] = useState<'connecting' | 'live' | 'closed'>('connecting');
+  const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<ReconnectingWebSocket | null>(null);
 
   useEffect(() => {
+    setError(null);
+    setCandles([]);
     const url = new URL('/ws', window.location.origin);
     url.protocol = url.protocol.replace('http', 'ws');
     const ws = new ReconnectingWebSocket(url.toString(), [], {
@@ -42,8 +45,11 @@ export function useFeed({ symbol, timeframe }: UseFeedOpts) {
       const msg = JSON.parse(ev.data) as ServerMessage;
       if (msg.type === 'snapshot' && msg.symbol === symbol && msg.timeframe === timeframe) {
         setCandles(msg.candles);
+        setError(null);
       } else if (msg.type === 'tick' && msg.candle.symbol === symbol && msg.candle.timeframe === timeframe) {
         setCandles((prev) => mergeTick(prev, msg.candle));
+      } else if (msg.type === 'error') {
+        setError(msg.message);
       }
     });
 
@@ -53,7 +59,7 @@ export function useFeed({ symbol, timeframe }: UseFeedOpts) {
     };
   }, [symbol, timeframe]);
 
-  return { candles, status };
+  return { candles, status, error };
 }
 
 function mergeTick(prev: Candle[], next: Candle): Candle[] {

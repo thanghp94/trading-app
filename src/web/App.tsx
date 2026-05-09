@@ -17,14 +17,15 @@ const SYMBOL_PRESETS: SymbolPreset[] = [
   { ticker: 'BTCUSDT', label: 'BTC' },
   { ticker: 'ETHUSDT', label: 'ETH' },
   { ticker: 'SOLUSDT', label: 'SOL' },
-  { ticker: 'PAXGUSDT', label: 'GOLD', note: 'PAXGUSDT is a gold-backed token — tracks real XAU/USD within ~0.3% on weekdays. Wire up OANDA for true spot XAU/USD.' },
-  { ticker: 'XAUTUSDT', label: 'XAUT', note: 'Tether Gold token — alternative gold proxy on Binance.' },
+  { ticker: 'XAUUSD', label: 'XAU/USD', note: 'Real spot XAU/USD via OANDA practice account. Requires OANDA_API_TOKEN in .env — falls back to an error message if unset.' },
+  { ticker: 'EURUSD', label: 'EUR/USD', note: 'Spot forex via OANDA practice account.' },
+  { ticker: 'PAXGUSDT', label: 'PAXG', note: 'Tokenized gold (Binance) — proxy for XAU/USD, tracks within ~0.3% weekdays. Use the XAU/USD button for the real thing.' },
 ];
 
 export function App() {
   const [symbol, setSymbol] = useState<string>('BTCUSDT');
   const [timeframe, setTimeframe] = useState<Timeframe>('5m');
-  const { candles, status } = useFeed({ symbol, timeframe });
+  const { candles, status, error } = useFeed({ symbol, timeframe });
   const zones = useZones(candles);
 
   const active = zones.filter((z) => z.state === 'active').length;
@@ -47,7 +48,12 @@ export function App() {
           status: {status} · zones: {active} active · {broken} broken{flipped ? ` · ${flipped} flipped` : ''}
         </span>
       </header>
-      {note && (
+      {error && (
+        <div style={{ fontSize: 12, color: '#f85149', marginBottom: 6, padding: '6px 10px', border: '1px solid #f85149', borderRadius: 4, background: 'rgba(248, 81, 73, 0.1)' }}>
+          ✗ {error}
+        </div>
+      )}
+      {!error && note && (
         <div style={{ fontSize: 11, color: '#d4a72c', marginBottom: 6 }}>
           ⚠ {note}
         </div>
