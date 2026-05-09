@@ -12,6 +12,7 @@ import { JournalStore } from './journal/store.js';
 import { RiskGuards } from './journal/risk-guards.js';
 import { runBacktest, type BacktestRequest } from './backtest/backtest-engine.js';
 import { rankWatchlist } from './scanner/watchlist-scanner.js';
+import { checkMtf } from '../shared/indicators/mtf.js';
 import { SubscriberStore } from './public-feed/subscribers.js';
 import { AutoExecutor } from './execution/auto-executor.js';
 
@@ -48,6 +49,24 @@ const broadcastAlert = (alert: Alert) => {
     const msg: ServerMessage = { type: 'alert', alert: tagged };
     for (const s of sockets) s.send(msg);
     return;
+  }
+
+  // Annotate alert with MTF context — informational only, no suppression here.
+  // The user decides via the alert panel / journal whether to act on
+  // mismatched alerts. Backtest applies hard gating; live mode just tags.
+  try {
+    const stream = alertEngine.snapshots().find((s) => s.symbol === alert.symbol && s.timeframe === alert.timeframe);
+    if (stream) {
+      const entryIdx = stream.candles.findIndex((c) => c.time === alert.time);
+      if (entryIdx >= 0) {
+        const m = checkMtf({ baseCandles: stream.candles, baseTf: alert.timeframe, entryIdx, direction: alert.direction });
+        alert.meta = { ...(alert.meta ?? {}), mtfTrend: m.trend, mtfZone: m.zone, mtfHtf: m.htf };
+        const tag = m.trend === 'aligned' && m.zone === 'aligned' ? '✅' : m.trend === 'mismatch' ? '⚠ MTF mismatch' : '';
+        if (tag) alert.headline = `${alert.headline} · ${tag}`;
+      }
+    }
+  } catch (err) {
+    fastify.log.warn({ err }, '[alerts] mtf check failed');
   }
 
   const msg: ServerMessage = { type: 'alert', alert };

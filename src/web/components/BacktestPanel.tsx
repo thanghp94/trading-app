@@ -42,6 +42,8 @@ export function BacktestPanel(props: BacktestPanelProps) {
   const [maxBars, setMaxBars] = useState('30');
   const [riskPct, setRiskPct] = useState('1');
   const [preferredOnly, setPreferredOnly] = useState(false);
+  const [mtfTrendAlign, setMtfTrendAlign] = useState(false);
+  const [mtfZoneConfluence, setMtfZoneConfluence] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
 
   const run = async () => {
@@ -64,6 +66,8 @@ export function BacktestPanel(props: BacktestPanelProps) {
           riskPct: Number(riskPct),
           startingBalance: 10_000,
           preferredOnly,
+          mtfTrendAlign,
+          mtfZoneConfluence,
         }),
       });
       const json = (await res.json()) as BacktestResult;
@@ -107,6 +111,14 @@ export function BacktestPanel(props: BacktestPanelProps) {
             <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#8b949e', cursor: 'pointer' }}>
               <input type="checkbox" checked={preferredOnly} onChange={(e) => setPreferredOnly(e.target.checked)} />
               Preferred only (★ wave-5)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#8b949e', cursor: 'pointer' }} title="HTF EMA(50) must agree with the trade direction">
+              <input type="checkbox" checked={mtfTrendAlign} onChange={(e) => setMtfTrendAlign(e.target.checked)} />
+              MTF trend align
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#8b949e', cursor: 'pointer' }} title="Entry must be inside an active HTF S/R zone in trade direction">
+              <input type="checkbox" checked={mtfZoneConfluence} onChange={(e) => setMtfZoneConfluence(e.target.checked)} />
+              HTF zone confluence
             </label>
           </div>
           <div style={paramsStyle}>

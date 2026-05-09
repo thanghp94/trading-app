@@ -2,6 +2,7 @@ import type { Alert, Candle, Timeframe } from '../../shared/types.js';
 import { atr } from '../../shared/indicators/atr.js';
 import { computeZones } from '../../shared/indicators/sr-zone-tracker.js';
 import { computeWaves } from '../../shared/indicators/wave-counter.js';
+import { checkMtf, type MtfCheck } from '../../shared/indicators/mtf.js';
 import { ALL_RULES } from '../alerts/rules/index.js';
 import type { RuleContext } from '../alerts/rule-types.js';
 
@@ -50,6 +51,20 @@ export interface BacktestRequest {
    * Wave-3, zone-touch, and pattern alerts are ignored. Default false.
    */
   preferredOnly?: boolean;
+
+  /**
+   * Multi-timeframe trend gating. When true, an alert only spawns a trade
+   * if the higher-timeframe EMA(50) agrees with the trade direction.
+   * Encodes "trade with the higher-TF trend." Default false.
+   */
+  mtfTrendAlign?: boolean;
+
+  /**
+   * Multi-timeframe zone confluence gating. When true, an alert only spawns
+   * a trade if entry price sits inside an active HTF zone in the trade
+   * direction (support for bull, resistance for bear). Default false.
+   */
+  mtfZoneConfluence?: boolean;
 }
 
 export type BacktestOutcome = 'win' | 'loss' | 'breakeven' | 'time-stop';
@@ -69,6 +84,8 @@ export interface BacktestTrade {
   /** Why this SL/TP was chosen — for transparency in result inspection. */
   slReason: string;
   tpReason: string;
+  /** MTF check at entry time. Always populated, even when gating was off. */
+  mtf: MtfCheck;
 }
 
 export interface BacktestResult {
@@ -119,6 +136,8 @@ export function runBacktest(req: BacktestRequest): BacktestResult {
   const riskPct = req.riskPct ?? 1;
   const startingBalance = req.startingBalance ?? 10000;
   const preferredOnly = req.preferredOnly ?? false;
+  const mtfTrendAlign = req.mtfTrendAlign ?? false;
+  const mtfZoneConfluence = req.mtfZoneConfluence ?? false;
 
   const alerts = replayAlerts(req.symbol, req.timeframe, req.candles, preferredOnly);
   const atrSeries = atr(req.candles, 14);
@@ -138,6 +157,16 @@ export function runBacktest(req: BacktestRequest): BacktestResult {
     const isBull = alert.direction === 'bull';
     const a = atrSeries[entryIdx];
     if (!Number.isFinite(a) || a <= 0) continue;
+
+    // ─── MTF check (always run; used for tagging + optional gating) ────
+    const mtf = checkMtf({
+      baseCandles: req.candles,
+      baseTf: req.timeframe,
+      entryIdx,
+      direction: alert.direction,
+    });
+    if (mtfTrendAlign && mtf.trend === 'mismatch') continue;
+    if (mtfZoneConfluence && mtf.zone !== 'aligned') continue;
 
     // ─── SL ────────────────────────────────────────────────────────────
     let sl = isBull ? entry - entry * slPct : entry + entry * slPct;
@@ -248,7 +277,7 @@ export function runBacktest(req: BacktestRequest): BacktestResult {
 
     trades.push({
       alert, entryIdx, exitIdx, entry, sl, tp, exit, rMultiple, outcome, pnlAbs,
-      balanceAfter: balance, slReason, tpReason,
+      balanceAfter: balance, slReason, tpReason, mtf,
     });
     equity.push({ time: req.candles[exitIdx].time, balance });
   }
