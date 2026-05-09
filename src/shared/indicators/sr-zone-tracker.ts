@@ -9,7 +9,7 @@ interface ComputeOpts {
   atrPeriod?: number;
   /** Cluster pivots whose midpoints are within `clusterAtrMult × ATR` (default 0.3). */
   clusterAtrMult?: number;
-  /** Drop zones older than `maxBarsRetained` bars from the *latest* candle (default 500). */
+  /** Drop zones older than `maxBarsRetained` bars from the *latest* candle (default 1000 — matches the backfill window so all visible-history zones stay rendered). */
   maxBarsRetained?: number;
 }
 
@@ -33,7 +33,7 @@ interface ComputeOpts {
  *              and state returns to active — role reversal.
  */
 export function computeZones(candles: Candle[], opts: ComputeOpts = {}): Zone[] {
-  const { pivotN = 2, atrPeriod = 14, clusterAtrMult = 0.3, maxBarsRetained = 500 } = opts;
+  const { pivotN = 2, atrPeriod = 14, clusterAtrMult = 0.3, maxBarsRetained = 1000 } = opts;
   if (candles.length < atrPeriod + 2 * pivotN + 1) return [];
 
   const atrSeries = atr(candles, atrPeriod);

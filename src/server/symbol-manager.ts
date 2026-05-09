@@ -28,7 +28,7 @@ export class SymbolManager {
     return this.adapters.get('binance')!;
   }
 
-  async subscribe({ symbol, timeframe }: SubKey, backfillLimit = 100): Promise<Candle[]> {
+  async subscribe({ symbol, timeframe }: SubKey, backfillLimit = 1000): Promise<Candle[]> {
     const key = `${symbol}:${timeframe}`;
     const adapter = this.adapterFor(symbol);
     const history = await adapter.fetchHistorical({ symbol, timeframe, limit: backfillLimit });
