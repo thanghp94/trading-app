@@ -1,0 +1,13 @@
+# Replace `trader.example.com` with your domain.
+# Caddy will auto-provision a Let's Encrypt cert on first request.
+#
+# To use a self-signed cert (no domain):
+#   :8443 {
+#     tls internal
+#     reverse_proxy app:3001
+#   }
+
+trader.example.com {
+  reverse_proxy app:3001
+  encode zstd gzip
+}

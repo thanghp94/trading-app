@@ -1,6 +1,7 @@
 import type { Alert, Candle, Timeframe } from '../../shared/types.js';
 import { RuleEvaluator } from './rule-evaluator.js';
 import { TelegramBot } from './telegram-bot.js';
+import { WebhookBus } from './webhook-bus.js';
 
 /**
  * Top-level alert orchestrator.
@@ -23,11 +24,21 @@ export class AlertEngine {
   private history: Alert[] = [];
   private maxHistory = 200;
   private telegram: TelegramBot | null;
+  private webhooks: WebhookBus;
 
   constructor(private onBroadcast: (alert: Alert) => void) {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
     this.telegram = token && chatId ? new TelegramBot(token, chatId) : null;
+    this.webhooks = new WebhookBus();
+  }
+
+  /** Snapshot every active evaluator's candle buffer — used by the scanner. */
+  snapshots(): Array<{ symbol: string; timeframe: Timeframe; candles: Candle[] }> {
+    return Array.from(this.evaluators.entries()).map(([key, ev]) => {
+      const [symbol, timeframe] = key.split(':') as [string, Timeframe];
+      return { symbol, timeframe, candles: ev.snapshot() };
+    });
   }
 
   /** Parse ALERT_SYMBOLS env into a list of (symbol, tf). Empty if unset/invalid. */
@@ -80,6 +91,9 @@ export class AlertEngine {
           console.error(`[alerts] telegram failed: ${res.reason}`);
         }
       });
+    }
+    if (this.webhooks.hasAny()) {
+      void this.webhooks.send(alert);
     }
   }
 }

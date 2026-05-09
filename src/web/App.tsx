@@ -2,12 +2,38 @@ import { ChartCell } from './components/ChartCell.js';
 import { LayoutControls } from './components/LayoutControls.js';
 import { AlertPanel } from './components/AlertPanel.js';
 import { JournalPanel } from './components/JournalPanel.js';
+import { PositionSizer } from './components/PositionSizer.js';
+import { WatchlistPanel } from './components/WatchlistPanel.js';
 import { useLayout } from './use-layout.js';
 import { useAlerts } from './use-alerts.js';
+import { useAlertNotifications } from './use-alert-notifications.js';
+import type { Timeframe } from '../shared/types.js';
 
 export function App() {
-  const { layout, updateCell, addCell, removeCell, setCols, reset } = useLayout();
+  const {
+    layout,
+    saved,
+    updateCell,
+    addCell,
+    removeCell,
+    setCols,
+    reset,
+    saveCurrent,
+    applySaved,
+    deleteSaved,
+  } = useLayout();
   const { alerts, clearAlerts } = useAlerts();
+  useAlertNotifications(alerts);
+
+  // Watchlist click → swap symbol+timeframe into the first cell, or add a new cell.
+  const onWatchlistPick = (symbol: string, timeframe: string) => {
+    const tf = timeframe as Timeframe;
+    if (layout.cells.length > 0) {
+      updateCell(layout.cells[0].id, { symbol, timeframe: tf });
+    } else {
+      addCell();
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', padding: 8, gap: 8 }}>
@@ -16,9 +42,13 @@ export function App() {
         <LayoutControls
           cols={layout.cols}
           cellCount={layout.cells.length}
+          saved={saved}
           onCols={setCols}
           onAddChart={addCell}
           onReset={reset}
+          onSaveCurrent={saveCurrent}
+          onApplySaved={applySaved}
+          onDeleteSaved={deleteSaved}
         />
       </header>
       <div
@@ -45,6 +75,8 @@ export function App() {
           </div>
         )}
       </div>
+      <PositionSizer />
+      <WatchlistPanel onPick={onWatchlistPick} />
       <AlertPanel alerts={alerts} onClear={clearAlerts} />
       <JournalPanel />
     </div>
@@ -58,14 +90,12 @@ const headerStyle: React.CSSProperties = {
   gap: 12,
   flexWrap: 'wrap',
 };
-
 const titleStyle: React.CSSProperties = {
   margin: 0,
   fontSize: 16,
   fontWeight: 600,
   color: '#c9d1d9',
 };
-
 const emptyStyle: React.CSSProperties = {
   gridColumn: '1 / -1',
   display: 'flex',

@@ -9,6 +9,8 @@ import { SymbolManager } from './symbol-manager.js';
 import { AlertEngine } from './alerts/alert-engine.js';
 import { analyzeChart } from './ai/analyze.js';
 import { JournalStore } from './journal/store.js';
+import { runBacktest, type BacktestRequest } from './backtest/backtest-engine.js';
+import { rankWatchlist } from './scanner/watchlist-scanner.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 3001);
@@ -69,12 +71,40 @@ fastify.post('/api/analyze', async (req) => {
   return analyzeChart(req.body as Parameters<typeof analyzeChart>[0]);
 });
 
-// Journal — list, get, update, stats.
+// Journal — list, get, update, stats, csv.
 fastify.get('/api/journal', async () => ({ trades: journal.list(), stats: journal.stats() }));
 fastify.get('/api/journal/stats', async () => journal.stats());
 fastify.patch('/api/journal/:id', async (req) => {
   const { id } = req.params as { id: string };
   return journal.update(id, req.body as Parameters<typeof journal.update>[1]);
+});
+fastify.get('/api/journal/csv', async (_req, reply) => {
+  const trades = journal.list(10_000);
+  const header = 'id,alert_id,symbol,timeframe,direction,rule,entry_price,sl,tp,exit_price,outcome,r_multiple,notes,opened_at,closed_at\n';
+  const csvEscape = (v: unknown) => {
+    if (v == null) return '';
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const rows = trades
+    .map((t) =>
+      [t.id, t.alert_id, t.symbol, t.timeframe, t.direction, t.rule, t.entry_price, t.sl, t.tp, t.exit_price, t.outcome, t.r_multiple, t.notes, t.opened_at, t.closed_at]
+        .map(csvEscape)
+        .join(','),
+    )
+    .join('\n');
+  reply.header('Content-Type', 'text/csv; charset=utf-8');
+  reply.header('Content-Disposition', `attachment; filename="journal-${Date.now()}.csv"`);
+  return header + rows;
+});
+
+// Backtest — replay rules + simulate trades against any candle history.
+fastify.post('/api/backtest', async (req) => runBacktest(req.body as BacktestRequest));
+
+// Watchlist scanner — score every active stream, return top setups.
+fastify.get('/api/scan', async () => {
+  const inputs = alertEngine.snapshots();
+  return rankWatchlist(inputs, 30);
 });
 
 fastify.register(async (app) => {

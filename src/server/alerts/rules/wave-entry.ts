@@ -65,4 +65,4 @@ export const wave5EntryRule: AlertRule = {
   },
 };
 
-export const ALL_RULES = [wave3EntryRule, wave5EntryRule];
+// Aggregate rule list lives in ./index.ts to avoid circular import.

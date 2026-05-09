@@ -25,6 +25,13 @@ export function JournalPanel() {
           <div style={statsRowStyle}>
             <span><b>{stats.wins}</b>W · <b>{stats.losses}</b>L · {stats.breakeven}BE · {stats.open}open</span>
             <span>win {winRate.toFixed(0)}% · avg {stats.avgR.toFixed(2)}R</span>
+            <a
+              href="/api/journal/csv"
+              style={{ fontSize: 10, color: '#1f6feb', textDecoration: 'none' }}
+              title="Download all trades as CSV"
+            >
+              ⬇ CSV
+            </a>
           </div>
           {trades.length === 0 ? (
             <div style={emptyStyle}>No trades yet. Auto-logged when an alert fires.</div>

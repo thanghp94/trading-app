@@ -2,7 +2,7 @@ import type { Alert, Candle, Timeframe } from '../../shared/types.js';
 import { computeZones } from '../../shared/indicators/sr-zone-tracker.js';
 import { computeWaves } from '../../shared/indicators/wave-counter.js';
 import type { AlertRule, RuleContext } from './rule-types.js';
-import { ALL_RULES } from './rules/wave-entry.js';
+import { ALL_RULES } from './rules/index.js';
 
 /**
  * Per (symbol, timeframe) streaming alert evaluator.
@@ -53,6 +53,11 @@ export class RuleEvaluator {
   /** Seed with a historical batch (cold-start backfill). Does not evaluate rules. */
   seed(candles: Candle[]): void {
     this.candles = candles.slice(-2000);
+  }
+
+  /** Read-only snapshot of the rolling candle buffer. Used by the scanner. */
+  snapshot(): Candle[] {
+    return this.candles;
   }
 
   private evaluate(): void {

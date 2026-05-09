@@ -53,3 +53,40 @@ tests/
   - Backend → Binance via the adapter's exponential-backoff reconnect loop.
   - Browser → Backend via `reconnecting-websocket`.
 - Bad candles (NaN, inverted, negative) are dropped at the adapter boundary.
+
+## Deploy to a VPS
+
+```bash
+# On a fresh Ubuntu/Debian box with Docker installed:
+git clone <your-repo> trading-app && cd trading-app
+cp .env.example .env  # fill in TELEGRAM, ALERT_SYMBOLS, ANTHROPIC_API_KEY, TWELVEDATA_API_KEY
+# Edit Caddyfile: replace trader.example.com with your domain (or use the
+# self-signed :8443 block if you don't have a domain).
+docker compose up -d --build
+```
+
+Caddy auto-provisions a Let's Encrypt cert on first HTTPS request. SQLite
+journal lives in a docker volume (`data:/data`) so it survives image rebuilds.
+
+## Backups
+
+```bash
+# On the VPS, add to /etc/cron.daily/backup-trader:
+docker compose exec -T app sqlite3 /data/journal.db ".backup /data/journal-$(date +%F).db"
+# Then rsync /var/lib/docker/volumes/<project>_data/_data/*.db to your local machine.
+```
+
+## API endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/health` | uptime ping |
+| GET | `/api/alerts` | recent alert history |
+| POST | `/api/analyze` | Claude Haiku read on a chart |
+| POST | `/api/backtest` | replay rules + simulate trades |
+| GET | `/api/scan` | rank all active streams |
+| GET | `/api/journal` | trades + stats |
+| GET | `/api/journal/csv` | CSV export |
+| PATCH | `/api/journal/:id` | update SL/TP/exit/outcome |
+| WS | `/ws` | tick stream + alerts (bearer auth optional) |
+

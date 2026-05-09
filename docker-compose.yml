@@ -1,0 +1,35 @@
+# Production compose for a single-VPS deploy.
+#
+#   docker compose up -d --build
+#
+# Caddy fronts the app on :443 with auto-TLS via Let's Encrypt. Set
+# DOMAIN in .env to your domain (e.g. "trader.example.com") OR remove the
+# caddy service and expose the app port directly.
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - data:/data
+    expose:
+      - "3001"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  data:
+  caddy_data:
+  caddy_config:

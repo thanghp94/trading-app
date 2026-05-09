@@ -5,17 +5,28 @@ export interface CellConfig {
   id: string;
   symbol: string;
   timeframe: Timeframe;
-  /** Per-cell indicator toggles. Default off to keep the chart clean. */
   showEmas?: boolean;
   showHtfZones?: boolean;
 }
 
 export interface GridLayoutConfig {
-  cols: number; // 1..4
+  cols: number;
   cells: CellConfig[];
 }
 
-const STORAGE_KEY = 'trading-app:layout-v1';
+export interface NamedLayout {
+  id: string;
+  name: string;
+  config: GridLayoutConfig;
+}
+
+export interface LayoutsRoot {
+  active: GridLayoutConfig;
+  saved: NamedLayout[];
+}
+
+const STORAGE_KEY = 'trading-app:layout-v2';
+const LEGACY_KEY = 'trading-app:layout-v1';
 
 const DEFAULT_LAYOUT: GridLayoutConfig = {
   cols: 2,
@@ -27,45 +38,59 @@ const DEFAULT_LAYOUT: GridLayoutConfig = {
   ],
 };
 
+const DEFAULT_ROOT: LayoutsRoot = { active: DEFAULT_LAYOUT, saved: [] };
+
 /**
- * Grid layout state with localStorage persistence. Each cell tracks its own
- * (symbol, timeframe). Layout survives reload.
+ * Grid layout with localStorage persistence + named presets.
  *
- * The grid is fixed `cols`-wide; rows grow naturally with cell count via
- * CSS grid auto-flow. To go from 4 charts to 12, just add 8 more — the
- * grid handles wrapping.
+ * Active layout = the one currently rendered.
+ * Saved layouts = a library you can apply with one click ("Morning crypto",
+ * "Gold session", "VN equities", etc.).
+ *
+ * Migrates from v1 (just the active layout) by upgrading on first load.
  */
 export function useLayout() {
-  const [layout, setLayout] = useState<GridLayoutConfig>(() => {
+  const [root, setRoot] = useState<LayoutsRoot>(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as GridLayoutConfig;
-        if (parsed?.cells?.length) return parsed;
+      const v2 = localStorage.getItem(STORAGE_KEY);
+      if (v2) {
+        const parsed = JSON.parse(v2) as LayoutsRoot;
+        if (parsed?.active?.cells) return parsed;
+      }
+      const v1 = localStorage.getItem(LEGACY_KEY);
+      if (v1) {
+        const parsed = JSON.parse(v1) as GridLayoutConfig;
+        if (parsed?.cells) return { active: parsed, saved: [] };
       }
     } catch {
-      /* ignore corrupt storage */
+      /* corrupt storage — fall through to default */
     }
-    return DEFAULT_LAYOUT;
+    return DEFAULT_ROOT;
   });
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(root));
     } catch {
-      /* quota exceeded — ignore, in-memory state still works for the session */
+      /* quota — ignore, in-memory still works */
     }
-  }, [layout]);
+  }, [root]);
+
+  const layout = root.active;
+
+  const updateActive = (patch: (prev: GridLayoutConfig) => GridLayoutConfig) => {
+    setRoot((r) => ({ ...r, active: patch(r.active) }));
+  };
 
   const updateCell = (id: string, patch: Partial<CellConfig>) => {
-    setLayout((prev) => ({
+    updateActive((prev) => ({
       ...prev,
       cells: prev.cells.map((c) => (c.id === id ? { ...c, ...patch } : c)),
     }));
   };
 
   const addCell = () => {
-    setLayout((prev) => ({
+    updateActive((prev) => ({
       ...prev,
       cells: [
         ...prev.cells,
@@ -75,14 +100,50 @@ export function useLayout() {
   };
 
   const removeCell = (id: string) => {
-    setLayout((prev) => ({ ...prev, cells: prev.cells.filter((c) => c.id !== id) }));
+    updateActive((prev) => ({ ...prev, cells: prev.cells.filter((c) => c.id !== id) }));
   };
 
   const setCols = (cols: number) => {
-    setLayout((prev) => ({ ...prev, cols: Math.max(1, Math.min(6, cols)) }));
+    updateActive((prev) => ({ ...prev, cols: Math.max(1, Math.min(6, cols)) }));
   };
 
-  const reset = () => setLayout(DEFAULT_LAYOUT);
+  const reset = () => updateActive(() => DEFAULT_LAYOUT);
 
-  return { layout, updateCell, addCell, removeCell, setCols, reset };
+  // ──────── Named presets ────────
+
+  const saveCurrent = (name: string) => {
+    if (!name.trim()) return;
+    setRoot((r) => ({
+      ...r,
+      saved: [
+        ...r.saved.filter((s) => s.name !== name),
+        { id: `s${Date.now()}`, name, config: r.active },
+      ],
+    }));
+  };
+
+  const applySaved = (id: string) => {
+    setRoot((r) => {
+      const found = r.saved.find((s) => s.id === id);
+      if (!found) return r;
+      return { ...r, active: found.config };
+    });
+  };
+
+  const deleteSaved = (id: string) => {
+    setRoot((r) => ({ ...r, saved: r.saved.filter((s) => s.id !== id) }));
+  };
+
+  return {
+    layout,
+    saved: root.saved,
+    updateCell,
+    addCell,
+    removeCell,
+    setCols,
+    reset,
+    saveCurrent,
+    applySaved,
+    deleteSaved,
+  };
 }

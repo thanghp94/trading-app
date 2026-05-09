@@ -1,6 +1,7 @@
 import { Chart } from './Chart.js';
 import { ReplayControls } from './ReplayControls.js';
 import { AnalyzeButton } from './AnalyzeButton.js';
+import { BacktestPanel } from './BacktestPanel.js';
 import { useFeed } from '../use-feed.js';
 import { useZones } from '../use-zones.js';
 import { useWaves } from '../use-waves.js';
@@ -76,6 +77,7 @@ export function ChartCell({ cell, onChange, onRemove }: ChartCellProps) {
           HTF
         </button>
         <AnalyzeButton symbol={cell.symbol} timeframe={cell.timeframe} candles={candles} zones={zones} waves={waves} />
+        <BacktestPanel symbol={cell.symbol} timeframe={cell.timeframe} candles={candles} />
         <ReplayControls
           mode={replay.mode}
           cursor={replay.cursor}
