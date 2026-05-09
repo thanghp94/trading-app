@@ -17,9 +17,9 @@ const SYMBOL_PRESETS: SymbolPreset[] = [
   { ticker: 'BTCUSDT', label: 'BTC' },
   { ticker: 'ETHUSDT', label: 'ETH' },
   { ticker: 'SOLUSDT', label: 'SOL' },
-  { ticker: 'XAUUSD', label: 'XAU/USD', note: 'Real spot XAU/USD via OANDA practice account. Requires OANDA_API_TOKEN in .env — falls back to an error message if unset.' },
-  { ticker: 'EURUSD', label: 'EUR/USD', note: 'Spot forex via OANDA practice account.' },
-  { ticker: 'PAXGUSDT', label: 'PAXG', note: 'Tokenized gold (Binance) — proxy for XAU/USD, tracks within ~0.3% weekdays. Use the XAU/USD button for the real thing.' },
+  { ticker: 'XAUUSD', label: 'XAU/USD', note: 'Real spot XAU/USD via TwelveData (free, works in VN). Requires TWELVEDATA_API_KEY in .env — falls back to an error message if unset. Updates every ~2 min on free tier.' },
+  { ticker: 'EURUSD', label: 'EUR/USD', note: 'Spot forex via TwelveData.' },
+  { ticker: 'PAXGUSDT', label: 'PAXG', note: 'Tokenized gold (Binance) — proxy for XAU/USD, tracks within ~0.3% weekdays. Use XAU/USD for the real thing.' },
 ];
 
 export function App() {

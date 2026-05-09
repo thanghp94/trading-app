@@ -1,6 +1,7 @@
 import type { Candle, Timeframe } from '../shared/types.js';
 import { BinanceAdapter } from './adapters/binance-adapter.js';
 import { OandaAdapter } from './adapters/oanda-adapter.js';
+import { TwelveDataAdapter } from './adapters/twelvedata-adapter.js';
 import type { BaseDataAdapter } from './adapters/base-data-adapter.js';
 
 interface SubKey {
@@ -9,33 +10,36 @@ interface SubKey {
 }
 
 /**
- * Symbols that should be routed to OANDA (forex pairs + spot metals).
- * Easily extended — add a 6-char symbol or one already containing `_`.
+ * Symbols that should be routed to a forex/metals adapter (TwelveData by
+ * default, OANDA fallback). Crypto stays on Binance.
  */
-const OANDA_SYMBOLS = new Set([
+const FX_METALS_SYMBOLS = new Set([
   'XAUUSD', 'XAGUSD',
   'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD',
   'EURJPY', 'GBPJPY', 'EURGBP',
 ]);
 
-function isOandaSymbol(symbol: string): boolean {
-  return OANDA_SYMBOLS.has(symbol.toUpperCase());
+function isFxMetalsSymbol(symbol: string): boolean {
+  return FX_METALS_SYMBOLS.has(symbol.toUpperCase());
 }
 
 /**
  * Routes (symbol, timeframe) subscriptions to the right adapter.
  *
- * - Crypto (BTCUSDT, ETHUSDT, PAXGUSDT, …) → BinanceAdapter
- * - Forex + spot metals (XAUUSD, EURUSD, …) → OandaAdapter
- * - VN equities (W3.2)                       → DnseAdapter or SsiAdapter
+ * - Crypto (BTCUSDT, PAXGUSDT, …)        → BinanceAdapter (free, public WS)
+ * - Forex + spot metals (XAUUSD, EURUSD) → TwelveData (works in VN) or
+ *                                           OANDA (blocked in VN, kept as
+ *                                           opt-in fallback for users who
+ *                                           can reach it)
+ * - VN equities (W3.2)                    → DnseAdapter or SsiAdapter
  *
- * OANDA adapter is only constructed when a token is configured. If the user
- * subscribes to an OANDA symbol without setup, we return a clear error.
+ * Adapters are constructed only when their credentials are configured.
+ * Trying to subscribe to an FX/metals symbol with no provider configured
+ * returns a clear error.
  */
 export class SymbolManager {
   private adapters = new Map<string, BaseDataAdapter>();
   private subs = new Set<string>(); // `${symbol}:${timeframe}`
-  private oandaToken: string | undefined;
 
   constructor(private onCandle: (c: Candle) => void, private onError: (err: Error) => void) {
     const binance = new BinanceAdapter();
@@ -43,9 +47,14 @@ export class SymbolManager {
     binance.on('error', (err) => this.onError(err));
     this.adapters.set('binance', binance);
 
-    this.oandaToken = process.env.OANDA_API_TOKEN;
-    if (this.oandaToken) {
-      const oanda = new OandaAdapter(this.oandaToken);
+    if (process.env.TWELVEDATA_API_KEY) {
+      const td = new TwelveDataAdapter(process.env.TWELVEDATA_API_KEY);
+      td.on('candle', (c) => this.onCandle(c));
+      td.on('error', (err) => this.onError(err));
+      this.adapters.set('twelvedata', td);
+    }
+    if (process.env.OANDA_API_TOKEN) {
+      const oanda = new OandaAdapter(process.env.OANDA_API_TOKEN);
       oanda.on('candle', (c) => this.onCandle(c));
       oanda.on('error', (err) => this.onError(err));
       this.adapters.set('oanda', oanda);
@@ -53,15 +62,16 @@ export class SymbolManager {
   }
 
   private adapterFor(symbol: string): BaseDataAdapter {
-    if (isOandaSymbol(symbol)) {
+    if (isFxMetalsSymbol(symbol)) {
+      // Prefer TwelveData (works in VN); fall back to OANDA if only that's set.
+      const td = this.adapters.get('twelvedata');
+      if (td) return td;
       const oanda = this.adapters.get('oanda');
-      if (!oanda) {
-        throw new Error(
-          `Symbol "${symbol}" requires OANDA but OANDA_API_TOKEN is not set. ` +
-            `Add it to .env and restart the server.`,
-        );
-      }
-      return oanda;
+      if (oanda) return oanda;
+      throw new Error(
+        `Symbol "${symbol}" requires a forex/metals provider. ` +
+          `Set TWELVEDATA_API_KEY in .env (free at twelvedata.com) and restart the server.`,
+      );
     }
     return this.adapters.get('binance')!;
   }
