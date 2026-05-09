@@ -4,23 +4,28 @@ import {
   createSeriesMarkers,
   CandlestickSeries,
   HistogramSeries,
+  LineSeries,
   type IChartApi,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type CandlestickData,
   type HistogramData,
+  type LineData,
   type SeriesMarker,
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts';
 import type { Candle, Zone } from '../../shared/types.js';
 import type { WaveCount } from '../../shared/indicators/wave-counter.js';
+import type { EmaSeries } from '../use-emas.js';
 import { ZonePrimitive } from './zone-primitive.js';
 
 interface ChartProps {
   candles: Candle[];
   zones?: Zone[];
+  htfZones?: Zone[];
   waves?: WaveCount[];
+  emas?: EmaSeries[];
 }
 
 const DARK_THEME = {
@@ -33,13 +38,15 @@ const DARK_THEME = {
 const UP = '#26a69a';
 const DOWN = '#ef5350';
 
-export function Chart({ candles, zones = [], waves = [] }: ChartProps) {
+export function Chart({ candles, zones = [], htfZones = [], waves = [], emas = [] }: ChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const zonePrimitiveRef = useRef<ZonePrimitive | null>(null);
+  const htfZonePrimitiveRef = useRef<ZonePrimitive | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const emaSeriesRef = useRef<Map<number, ISeriesApi<'Line'>>>(new Map());
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -62,6 +69,8 @@ export function Chart({ candles, zones = [], waves = [] }: ChartProps) {
 
     const zonePrimitive = new ZonePrimitive();
     candleSeries.attachPrimitive(zonePrimitive);
+    const htfZonePrimitive = new ZonePrimitive();
+    candleSeries.attachPrimitive(htfZonePrimitive);
 
     const markers = createSeriesMarkers(candleSeries, []);
 
@@ -69,6 +78,7 @@ export function Chart({ candles, zones = [], waves = [] }: ChartProps) {
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
     zonePrimitiveRef.current = zonePrimitive;
+    htfZonePrimitiveRef.current = htfZonePrimitive;
     markersRef.current = markers;
 
     return () => {
@@ -77,7 +87,9 @@ export function Chart({ candles, zones = [], waves = [] }: ChartProps) {
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
       zonePrimitiveRef.current = null;
+      htfZonePrimitiveRef.current = null;
       markersRef.current = null;
+      emaSeriesRef.current.clear();
     };
   }, []);
 
@@ -104,34 +116,58 @@ export function Chart({ candles, zones = [], waves = [] }: ChartProps) {
   }, [zones]);
 
   useEffect(() => {
+    htfZonePrimitiveRef.current?.setZones(htfZones);
+  }, [htfZones]);
+
+  useEffect(() => {
     if (!markersRef.current) return;
-    const markers = wavesToMarkers(waves);
-    markersRef.current.setMarkers(markers);
+    markersRef.current.setMarkers(wavesToMarkers(waves));
   }, [waves]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const present = new Set(emas.map((e) => e.period));
+    // Remove series for periods no longer in the list.
+    for (const [period, series] of emaSeriesRef.current.entries()) {
+      if (!present.has(period)) {
+        chart.removeSeries(series);
+        emaSeriesRef.current.delete(period);
+      }
+    }
+    // Add or update series for each requested EMA.
+    for (const e of emas) {
+      let series = emaSeriesRef.current.get(e.period);
+      if (!series) {
+        series = chart.addSeries(LineSeries, {
+          color: e.color,
+          lineWidth: 1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          title: `EMA ${e.period}`,
+        });
+        emaSeriesRef.current.set(e.period, series);
+      }
+      const data: LineData[] = [];
+      for (let i = 0; i < candles.length; i += 1) {
+        const v = e.values[i];
+        if (Number.isFinite(v)) {
+          data.push({ time: candles[i].time as UTCTimestamp, value: v });
+        }
+      }
+      series.setData(data);
+    }
+  }, [emas, candles]);
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 }
 
-/**
- * Convert wave counts to lightweight-charts markers.
- *
- * For each wave point we drop a labeled circle on the bar. Bull setups put
- * even-labeled points (0, 2, 4 = highs) above the bar and odd-labeled
- * points (1, 3, 5 = lows) below; bear is mirrored.
- *
- * Reset / completion state colors the marker:
- *   - active count → yellow markers
- *   - completed (hit point 5) → green markers
- *   - reset (any reason) → gray markers
- */
 function wavesToMarkers(waves: WaveCount[]): SeriesMarker<Time>[] {
   const markers: SeriesMarker<Time>[] = [];
-
   for (const w of waves) {
     const completed = w.resetReason === 'completed';
     const reset = !w.active && !completed;
     const color = completed ? '#26a69a' : reset ? '#6e7681' : '#d4a72c';
-
     for (const p of w.points) {
       const isHighSide = w.direction === 'bull' ? p.label % 2 === 0 : p.label % 2 === 1;
       markers.push({
@@ -143,7 +179,6 @@ function wavesToMarkers(waves: WaveCount[]): SeriesMarker<Time>[] {
       });
     }
   }
-  // Markers must be sorted by time ascending for lightweight-charts.
   markers.sort((a, b) => (a.time as number) - (b.time as number));
   return markers;
 }

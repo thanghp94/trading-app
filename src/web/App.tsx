@@ -1,6 +1,7 @@
 import { ChartCell } from './components/ChartCell.js';
 import { LayoutControls } from './components/LayoutControls.js';
 import { AlertPanel } from './components/AlertPanel.js';
+import { JournalPanel } from './components/JournalPanel.js';
 import { useLayout } from './use-layout.js';
 import { useAlerts } from './use-alerts.js';
 
@@ -45,6 +46,7 @@ export function App() {
         )}
       </div>
       <AlertPanel alerts={alerts} onClear={clearAlerts} />
+      <JournalPanel />
     </div>
   );
 }

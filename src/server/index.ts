@@ -7,6 +7,8 @@ import fastifyStatic from '@fastify/static';
 import type { Alert, ClientMessage, ServerMessage } from '../shared/types.js';
 import { SymbolManager } from './symbol-manager.js';
 import { AlertEngine } from './alerts/alert-engine.js';
+import { analyzeChart } from './ai/analyze.js';
+import { JournalStore } from './journal/store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 3001);
@@ -24,10 +26,17 @@ try {
 }
 
 const sockets = new Set<{ send: (msg: ServerMessage) => void }>();
+const journal = new JournalStore();
 
 const broadcastAlert = (alert: Alert) => {
   const msg: ServerMessage = { type: 'alert', alert };
   for (const s of sockets) s.send(msg);
+  // Auto-log every alert as an "open" trade. Idempotent on alert_id.
+  try {
+    journal.logFromAlert(alert);
+  } catch (err) {
+    fastify.log.error({ err }, '[journal] log failed');
+  }
 };
 
 const alertEngine = new AlertEngine(broadcastAlert);
@@ -41,7 +50,6 @@ const symbolManager = new SymbolManager(
   (err) => fastify.log.error({ err }, 'adapter error'),
 );
 
-// Pre-subscribe to ALERT_SYMBOLS so alerts run continuously even with no UI open.
 const configured = AlertEngine.parseConfiguredSymbols();
 for (const cfg of configured) {
   try {
@@ -55,6 +63,19 @@ for (const cfg of configured) {
 
 fastify.get('/api/health', async () => ({ ok: true, ts: Date.now() }));
 fastify.get('/api/alerts', async () => alertEngine.getHistory());
+
+// AI analyze — proxies to Claude Haiku.
+fastify.post('/api/analyze', async (req) => {
+  return analyzeChart(req.body as Parameters<typeof analyzeChart>[0]);
+});
+
+// Journal — list, get, update, stats.
+fastify.get('/api/journal', async () => ({ trades: journal.list(), stats: journal.stats() }));
+fastify.get('/api/journal/stats', async () => journal.stats());
+fastify.patch('/api/journal/:id', async (req) => {
+  const { id } = req.params as { id: string };
+  return journal.update(id, req.body as Parameters<typeof journal.update>[1]);
+});
 
 fastify.register(async (app) => {
   app.get('/ws', { websocket: true }, (socket, req) => {
@@ -73,7 +94,6 @@ fastify.register(async (app) => {
     const handle = { send };
     sockets.add(handle);
 
-    // Backfill alert history on connect so the panel populates immediately.
     send({ type: 'alert-history', alerts: alertEngine.getHistory() });
 
     socket.on('message', async (raw) => {
@@ -88,8 +108,6 @@ fastify.register(async (app) => {
         try {
           const candles = await symbolManager.subscribe({ symbol: msg.symbol, timeframe: msg.timeframe });
           send({ type: 'snapshot', symbol: msg.symbol, timeframe: msg.timeframe, candles });
-          // Opportunistic: spin up an evaluator for whatever the UI asks for, on top of
-          // the fixed ALERT_SYMBOLS. Lets you click around and get alerts without env edits.
           alertEngine.seed(msg.symbol, msg.timeframe, candles);
         } catch (err) {
           send({ type: 'error', message: (err as Error).message });

@@ -1,8 +1,11 @@
 import { Chart } from './Chart.js';
 import { ReplayControls } from './ReplayControls.js';
+import { AnalyzeButton } from './AnalyzeButton.js';
 import { useFeed } from '../use-feed.js';
 import { useZones } from '../use-zones.js';
 import { useWaves } from '../use-waves.js';
+import { useEmas } from '../use-emas.js';
+import { useHtfZones } from '../use-htf-zones.js';
 import { useReplay } from '../use-replay.js';
 import type { Timeframe } from '../../shared/types.js';
 import type { CellConfig } from '../use-layout.js';
@@ -22,13 +25,12 @@ interface ChartCellProps {
 
 export function ChartCell({ cell, onChange, onRemove }: ChartCellProps) {
   const { candles: liveCandles, status, error } = useFeed({ symbol: cell.symbol, timeframe: cell.timeframe });
-  // Replay slices the candle stream at a cursor — all indicators downstream
-  // see only candles[0..cursor], so they recompute exactly as they would
-  // have at that moment in real time.
   const replay = useReplay(liveCandles);
   const candles = replay.candles;
   const zones = useZones(candles);
   const waves = useWaves(candles);
+  const emas = useEmas(candles);
+  const htfZones = useHtfZones(candles, cell.timeframe);
 
   const active = zones.filter((z) => z.state === 'active').length;
   const broken = zones.filter((z) => z.state === 'broken').length;
@@ -57,6 +59,23 @@ export function ChartCell({ cell, onChange, onRemove }: ChartCellProps) {
             <option key={tf} value={tf}>{tf}</option>
           ))}
         </select>
+        <button
+          type="button"
+          onClick={() => onChange({ showEmas: !cell.showEmas })}
+          title="Toggle EMA(20/50/200)"
+          style={{ ...toggleBtnStyle, ...(cell.showEmas ? toggleActiveStyle : {}) }}
+        >
+          EMA
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange({ showHtfZones: !cell.showHtfZones })}
+          title="Toggle higher-timeframe zone overlay"
+          style={{ ...toggleBtnStyle, ...(cell.showHtfZones ? toggleActiveStyle : {}) }}
+        >
+          HTF
+        </button>
+        <AnalyzeButton symbol={cell.symbol} timeframe={cell.timeframe} candles={candles} zones={zones} waves={waves} />
         <ReplayControls
           mode={replay.mode}
           cursor={replay.cursor}
@@ -85,7 +104,13 @@ export function ChartCell({ cell, onChange, onRemove }: ChartCellProps) {
       </div>
       {error && <div style={errorBannerStyle}>✗ {error}</div>}
       <div style={{ flex: 1, minHeight: 0 }}>
-        <Chart candles={candles} zones={zones} waves={waves} />
+        <Chart
+          candles={candles}
+          zones={zones}
+          htfZones={cell.showHtfZones ? htfZones : []}
+          waves={waves}
+          emas={cell.showEmas ? emas : []}
+        />
       </div>
     </div>
   );
@@ -120,6 +145,24 @@ const selectStyle: React.CSSProperties = {
   border: '1px solid #30363d',
   borderRadius: 3,
   cursor: 'pointer',
+};
+
+const toggleBtnStyle: React.CSSProperties = {
+  padding: '2px 6px',
+  fontSize: 11,
+  fontFamily: 'inherit',
+  border: '1px solid #30363d',
+  borderRadius: 3,
+  background: '#0d1117',
+  color: '#8b949e',
+  cursor: 'pointer',
+  minWidth: 32,
+};
+
+const toggleActiveStyle: React.CSSProperties = {
+  background: '#1f6feb',
+  color: '#fff',
+  borderColor: '#1f6feb',
 };
 
 const statusStyle: React.CSSProperties = {

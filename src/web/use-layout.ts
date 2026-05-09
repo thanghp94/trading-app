@@ -5,6 +5,9 @@ export interface CellConfig {
   id: string;
   symbol: string;
   timeframe: Timeframe;
+  /** Per-cell indicator toggles. Default off to keep the chart clean. */
+  showEmas?: boolean;
+  showHtfZones?: boolean;
 }
 
 export interface GridLayoutConfig {
