@@ -11,6 +11,8 @@ import { analyzeChart } from './ai/analyze.js';
 import { JournalStore } from './journal/store.js';
 import { runBacktest, type BacktestRequest } from './backtest/backtest-engine.js';
 import { rankWatchlist } from './scanner/watchlist-scanner.js';
+import { SubscriberStore } from './public-feed/subscribers.js';
+import { AutoExecutor } from './execution/auto-executor.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 3001);
@@ -29,16 +31,22 @@ try {
 
 const sockets = new Set<{ send: (msg: ServerMessage) => void }>();
 const journal = new JournalStore();
+const subscribers = new SubscriberStore();
+const autoExecutor = new AutoExecutor();
+fastify.log.info(`[exec] auto-execute mode: ${autoExecutor.getMode()}`);
 
 const broadcastAlert = (alert: Alert) => {
   const msg: ServerMessage = { type: 'alert', alert };
   for (const s of sockets) s.send(msg);
-  // Auto-log every alert as an "open" trade. Idempotent on alert_id.
   try {
     journal.logFromAlert(alert);
   } catch (err) {
     fastify.log.error({ err }, '[journal] log failed');
   }
+  // Optional auto-execution. No-op when AUTO_EXECUTE_MODE is unset/off.
+  void autoExecutor.maybeExecute(alert).catch((err) => {
+    fastify.log.error({ err }, '[exec] maybeExecute failed');
+  });
 };
 
 const alertEngine = new AlertEngine(broadcastAlert);
@@ -106,6 +114,43 @@ fastify.get('/api/scan', async () => {
   const inputs = alertEngine.snapshots();
   return rankWatchlist(inputs, 30);
 });
+
+// Public alert feed — subscriber management + read endpoint.
+fastify.get('/api/subscribers', async () => subscribers.list());
+fastify.post('/api/subscribers', async (req) => {
+  const body = req.body as { name?: string; symbols?: string; rules?: string; rateLimit?: number };
+  if (!body.name) throw new Error('name required');
+  return subscribers.create(body.name, body);
+});
+fastify.delete('/api/subscribers/:token', async (req) => {
+  const { token } = req.params as { token: string };
+  subscribers.delete(token);
+  return { ok: true };
+});
+fastify.get('/api/public/alerts', async (req, reply) => {
+  const token = (req.query as { token?: string } | undefined)?.token ?? '';
+  if (!token) {
+    reply.code(401);
+    return { error: 'token required' };
+  }
+  const sub = subscribers.get(token);
+  if (!sub) {
+    reply.code(403);
+    return { error: 'invalid token' };
+  }
+  // Filter the in-memory alert history through the subscriber's rules.
+  // We call consume() for each alert delivered so quotas are accurate.
+  const all = alertEngine.getHistory();
+  const out: Alert[] = [];
+  for (const a of all) {
+    if (subscribers.consume(token, a)) out.push(a);
+  }
+  return { name: sub.name, count: out.length, alerts: out };
+});
+
+// Auto-execution status + history (read-only).
+fastify.get('/api/execution/mode', async () => ({ mode: autoExecutor.getMode() }));
+fastify.get('/api/execution/history', async () => autoExecutor.getHistory());
 
 fastify.register(async (app) => {
   app.get('/ws', { websocket: true }, (socket, req) => {

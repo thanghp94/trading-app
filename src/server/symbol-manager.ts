@@ -1,6 +1,7 @@
 import type { Candle, Timeframe } from '../shared/types.js';
 import { BinanceAdapter } from './adapters/binance-adapter.js';
 import { OandaAdapter } from './adapters/oanda-adapter.js';
+import { TcbsAdapter } from './adapters/tcbs-adapter.js';
 import { TwelveDataAdapter } from './adapters/twelvedata-adapter.js';
 import type { BaseDataAdapter } from './adapters/base-data-adapter.js';
 
@@ -21,6 +22,18 @@ const FX_METALS_SYMBOLS = new Set([
 
 function isFxMetalsSymbol(symbol: string): boolean {
   return FX_METALS_SYMBOLS.has(symbol.toUpperCase());
+}
+
+/**
+ * VN equity tickers: 3-letter all-caps (HPG, VCB, FPT, MWG, VHM, ...) or
+ * a small set of derivative codes (VN30F1M, VN30F2M, ...). Routed to TCBS
+ * by default — no signup, ~1 minute delayed.
+ */
+function isVnEquitySymbol(symbol: string): boolean {
+  const s = symbol.toUpperCase();
+  if (/^VN30F\d/.test(s)) return true; // VN30 index futures
+  if (/^[A-Z]{3}$/.test(s)) return true; // standard HOSE/HNX/UPCOM ticker
+  return false;
 }
 
 /**
@@ -59,11 +72,15 @@ export class SymbolManager {
       oanda.on('error', (err) => this.onError(err));
       this.adapters.set('oanda', oanda);
     }
+    // TCBS needs no auth — always available for VN tickers.
+    const tcbs = new TcbsAdapter();
+    tcbs.on('candle', (c) => this.onCandle(c));
+    tcbs.on('error', (err) => this.onError(err));
+    this.adapters.set('tcbs', tcbs);
   }
 
   private adapterFor(symbol: string): BaseDataAdapter {
     if (isFxMetalsSymbol(symbol)) {
-      // Prefer TwelveData (works in VN); fall back to OANDA if only that's set.
       const td = this.adapters.get('twelvedata');
       if (td) return td;
       const oanda = this.adapters.get('oanda');
@@ -72,6 +89,9 @@ export class SymbolManager {
         `Symbol "${symbol}" requires a forex/metals provider. ` +
           `Set TWELVEDATA_API_KEY in .env (free at twelvedata.com) and restart the server.`,
       );
+    }
+    if (isVnEquitySymbol(symbol)) {
+      return this.adapters.get('tcbs')!;
     }
     return this.adapters.get('binance')!;
   }

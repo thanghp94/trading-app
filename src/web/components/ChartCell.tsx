@@ -16,6 +16,7 @@ const TIMEFRAMES: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
 const SYMBOL_GROUPS: Array<{ label: string; symbols: string[] }> = [
   { label: 'Crypto (Binance)', symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'PAXGUSDT', 'XAUTUSDT'] },
   { label: 'Forex/Metals (TwelveData)', symbols: ['XAUUSD', 'XAGUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD'] },
+  { label: 'VN equities (TCBS)', symbols: ['HPG', 'VCB', 'FPT', 'MWG', 'VHM', 'VNM', 'VIC', 'MSN', 'TCB', 'VN30F1M'] },
 ];
 
 interface ChartCellProps {
