@@ -33,3 +33,24 @@ export type AdapterState =
   | 'reconnecting'
   | 'gap-filling'
   | 'closed';
+
+// ───────── S/R zones ─────────
+
+export type ZoneType = 'support' | 'resistance';
+export type ZoneState = 'active' | 'broken';
+
+export interface Zone {
+  id: string;
+  type: ZoneType;
+  state: ZoneState;
+  /** Top of the zone (price). */
+  top: number;
+  /** Bottom of the zone (price). */
+  bottom: number;
+  /** Time of the earliest pivot in the cluster (unix sec). */
+  formedAt: number;
+  /** Time the zone was broken (close beyond), if any (unix sec). */
+  brokenAt?: number;
+  /** True if this zone was broken and then flipped to the opposite type via role reversal. */
+  flipped: boolean;
+}
