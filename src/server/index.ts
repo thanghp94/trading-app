@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
 import fastifyStatic from '@fastify/static';
-import type { ClientMessage, ServerMessage } from '../shared/types.js';
+import type { Alert, ClientMessage, ServerMessage } from '../shared/types.js';
 import { SymbolManager } from './symbol-manager.js';
+import { AlertEngine } from './alerts/alert-engine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 3001);
@@ -15,7 +16,6 @@ const fastify = Fastify({ logger: true });
 
 await fastify.register(websocket);
 
-// In production, serve the built Vite frontend. In dev, vite handles this.
 const webDist = path.resolve(__dirname, '../web');
 try {
   await fastify.register(fastifyStatic, { root: webDist });
@@ -23,22 +23,41 @@ try {
   fastify.log.info('No built frontend found — running API/WS only (use `pnpm dev:web` for the UI).');
 }
 
-// Track every connected browser so we can broadcast ticks.
 const sockets = new Set<{ send: (msg: ServerMessage) => void }>();
+
+const broadcastAlert = (alert: Alert) => {
+  const msg: ServerMessage = { type: 'alert', alert };
+  for (const s of sockets) s.send(msg);
+};
+
+const alertEngine = new AlertEngine(broadcastAlert);
 
 const symbolManager = new SymbolManager(
   (candle) => {
     const msg: ServerMessage = { type: 'tick', candle };
     for (const s of sockets) s.send(msg);
+    alertEngine.feed(candle);
   },
   (err) => fastify.log.error({ err }, 'adapter error'),
 );
 
+// Pre-subscribe to ALERT_SYMBOLS so alerts run continuously even with no UI open.
+const configured = AlertEngine.parseConfiguredSymbols();
+for (const cfg of configured) {
+  try {
+    const seed = await symbolManager.subscribe(cfg);
+    alertEngine.seed(cfg.symbol, cfg.timeframe, seed);
+    fastify.log.info(`[alerts] subscribed: ${cfg.symbol} ${cfg.timeframe}`);
+  } catch (err) {
+    fastify.log.error({ err }, `[alerts] failed to subscribe ${cfg.symbol}:${cfg.timeframe}`);
+  }
+}
+
 fastify.get('/api/health', async () => ({ ok: true, ts: Date.now() }));
+fastify.get('/api/alerts', async () => alertEngine.getHistory());
 
 fastify.register(async (app) => {
   app.get('/ws', { websocket: true }, (socket, req) => {
-    // Bearer-token check on the WS handshake. Bypassed if no token configured (dev convenience).
     if (AUTH_TOKEN) {
       const provided = (req.headers['authorization'] ?? '').replace(/^Bearer\s+/i, '');
       const fromQuery = (req.query as { token?: string } | undefined)?.token ?? '';
@@ -54,6 +73,9 @@ fastify.register(async (app) => {
     const handle = { send };
     sockets.add(handle);
 
+    // Backfill alert history on connect so the panel populates immediately.
+    send({ type: 'alert-history', alerts: alertEngine.getHistory() });
+
     socket.on('message', async (raw) => {
       let msg: ClientMessage;
       try {
@@ -66,11 +88,13 @@ fastify.register(async (app) => {
         try {
           const candles = await symbolManager.subscribe({ symbol: msg.symbol, timeframe: msg.timeframe });
           send({ type: 'snapshot', symbol: msg.symbol, timeframe: msg.timeframe, candles });
+          // Opportunistic: spin up an evaluator for whatever the UI asks for, on top of
+          // the fixed ALERT_SYMBOLS. Lets you click around and get alerts without env edits.
+          alertEngine.seed(msg.symbol, msg.timeframe, candles);
         } catch (err) {
           send({ type: 'error', message: (err as Error).message });
         }
       }
-      // unsubscribe is intentionally a no-op for W1 — symbol manager keeps streams alive.
     });
 
     socket.on('close', () => {

@@ -24,7 +24,29 @@ export type ServerMessage =
   | { type: 'snapshot'; symbol: string; timeframe: Timeframe; candles: Candle[] }
   | { type: 'tick'; candle: Candle }
   | { type: 'status'; symbol: string; timeframe: Timeframe; state: AdapterState }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | { type: 'alert'; alert: Alert }
+  | { type: 'alert-history'; alerts: Alert[] };
+
+// ───────── Alerts ─────────
+
+export interface Alert {
+  id: string;
+  /** Rule key, e.g. 'wave-3-entry'. */
+  rule: string;
+  symbol: string;
+  timeframe: Timeframe;
+  /** Bar time the rule fired against (unix seconds). */
+  time: number;
+  /** Bull / bear bias. */
+  direction: 'bull' | 'bear';
+  /** Price at the moment the rule fired (typically the bar close). */
+  price: number;
+  /** Short headline for Telegram + UI. */
+  headline: string;
+  /** Optional structured payload for downstream (journal, AI). */
+  meta?: Record<string, unknown>;
+}
 
 export type AdapterState =
   | 'connecting'

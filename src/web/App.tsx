@@ -1,9 +1,12 @@
 import { ChartCell } from './components/ChartCell.js';
 import { LayoutControls } from './components/LayoutControls.js';
+import { AlertPanel } from './components/AlertPanel.js';
 import { useLayout } from './use-layout.js';
+import { useAlerts } from './use-alerts.js';
 
 export function App() {
   const { layout, updateCell, addCell, removeCell, setCols, reset } = useLayout();
+  const { alerts, clearAlerts } = useAlerts();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', padding: 8, gap: 8 }}>
@@ -41,6 +44,7 @@ export function App() {
           </div>
         )}
       </div>
+      <AlertPanel alerts={alerts} onClear={clearAlerts} />
     </div>
   );
 }
