@@ -29,10 +29,13 @@ export const wave3EntryRule: AlertRule = {
     return {
       rule: 'wave-3-entry',
       direction: active.direction,
-      headline: `${ctx.symbol} ${ctx.timeframe} — wave-3 entry forming (${active.direction})`,
+      // wave-3 entry is the SECONDARY preference per teacher: wave 1 has printed
+      // but you haven't yet seen wave 3 confirm. Trade-able but with less conviction.
+      headline: `${ctx.symbol} ${ctx.timeframe} — wave-3 entry forming (${active.direction}, secondary)`,
       meta: {
         point0: active.points[0],
         point2: lastPoint,
+        preference: 'secondary',
       },
     };
   },
@@ -56,10 +59,13 @@ export const wave5EntryRule: AlertRule = {
     return {
       rule: 'wave-5-entry',
       direction: active.direction,
-      headline: `${ctx.symbol} ${ctx.timeframe} — wave-5 entry forming (${active.direction})`,
+      // wave-5 entry is the PREFERRED entry per teacher: by now wave 3 has
+      // confirmed the impulse, so wave 5 has higher conviction than wave 3.
+      headline: `★ ${ctx.symbol} ${ctx.timeframe} — wave-5 entry forming (${active.direction}, preferred)`,
       meta: {
         point0: active.points[0],
         point4: lastPoint,
+        preference: 'preferred',
       },
     };
   },
