@@ -1,6 +1,7 @@
 import { Chart } from './Chart.js';
 import { useFeed } from '../use-feed.js';
 import { useZones } from '../use-zones.js';
+import { useWaves } from '../use-waves.js';
 import type { Timeframe } from '../../shared/types.js';
 import type { CellConfig } from '../use-layout.js';
 
@@ -25,9 +26,12 @@ interface ChartCellProps {
 export function ChartCell({ cell, onChange, onRemove }: ChartCellProps) {
   const { candles, status, error } = useFeed({ symbol: cell.symbol, timeframe: cell.timeframe });
   const zones = useZones(candles);
+  const waves = useWaves(candles);
   const active = zones.filter((z) => z.state === 'active').length;
   const broken = zones.filter((z) => z.state === 'broken').length;
   const flipped = zones.filter((z) => z.flipped).length;
+  const activeWaves = waves.filter((w) => w.active).length;
+  const completedWaves = waves.filter((w) => w.resetReason === 'completed').length;
 
   return (
     <div style={cellWrapStyle}>
@@ -53,14 +57,20 @@ export function ChartCell({ cell, onChange, onRemove }: ChartCellProps) {
         <span style={statusStyle}>
           {error ? '✗' : status === 'live' ? '●' : status === 'connecting' ? '◌' : '○'}
           <span style={{ marginLeft: 4, opacity: 0.7 }}>
-            {active}a · {broken}b{flipped ? ` · ${flipped}f` : ''}
+            zones {active}a·{broken}b{flipped ? `·${flipped}f` : ''}
+            {(activeWaves + completedWaves) > 0 && (
+              <>
+                {' · waves '}
+                {activeWaves}●{completedWaves > 0 ? `·${completedWaves}✓` : ''}
+              </>
+            )}
           </span>
         </span>
         <button type="button" onClick={onRemove} title="Remove chart" style={removeBtnStyle}>×</button>
       </div>
       {error && <div style={errorBannerStyle}>✗ {error}</div>}
       <div style={{ flex: 1, minHeight: 0 }}>
-        <Chart candles={candles} zones={zones} />
+        <Chart candles={candles} zones={zones} waves={waves} />
       </div>
     </div>
   );
