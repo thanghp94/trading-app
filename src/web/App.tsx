@@ -7,6 +7,8 @@ import { PositionSizer } from './components/PositionSizer.js';
 import { WatchlistPanel } from './components/WatchlistPanel.js';
 import { HelpOverlay } from './components/HelpOverlay.js';
 import { SymbolSearch } from './components/SymbolSearch.js';
+import { MarketSessions } from './components/MarketSessions.js';
+import { useTheme } from './use-theme.js';
 import { useLayout } from './use-layout.js';
 import { useAlerts } from './use-alerts.js';
 import { useAlertNotifications } from './use-alert-notifications.js';
@@ -23,6 +25,7 @@ export function App() {
   const { alerts, clearAlerts } = useAlerts();
   useAlertNotifications(alerts);
   const pnl = useDailyPnl();
+  const [theme, setTheme] = useTheme();
   const [activeIdx, setActiveIdx] = useState(0);
   const [helpOpen, setHelpOpen] = useState(false);
   const [symbolSearchOpen, setSymbolSearchOpen] = useState(false);
@@ -68,6 +71,15 @@ export function App() {
       <header style={headerStyle}>
         <h1 style={titleStyle}>Trading App</h1>
         <DailyPnlBadge pnl={pnl} />
+        <MarketSessions />
+        <button
+          type="button"
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          style={themeBtnStyle}
+          title="Toggle light / dark theme"
+        >
+          {theme === 'dark' ? '☀' : '🌙'}
+        </button>
         <LayoutControls
           cols={layout.cols}
           cellCount={layout.cells.length}
@@ -147,5 +159,9 @@ const pnlBadgeStyle: React.CSSProperties = {
 };
 const helpBtnStyle: React.CSSProperties = {
   padding: '4px 10px', fontSize: 12, fontFamily: 'inherit',
+  border: '1px solid #30363d', borderRadius: 4, background: '#161b22', color: '#c9d1d9', cursor: 'pointer',
+};
+const themeBtnStyle: React.CSSProperties = {
+  padding: '4px 10px', fontSize: 14, fontFamily: 'inherit',
   border: '1px solid #30363d', borderRadius: 4, background: '#161b22', color: '#c9d1d9', cursor: 'pointer',
 };

@@ -62,13 +62,14 @@ export function useAlerts() {
 }
 
 function mergeAlerts(prev: Alert[], next: Alert[]): Alert[] {
-  const seen = new Set(prev.map((a) => a.id));
-  const merged = [...prev];
+  const byId = new Map(prev.map((a) => [a.id, a]));
   for (const a of next) {
-    if (seen.has(a.id)) continue;
-    merged.push(a);
-    seen.add(a.id);
+    const existing = byId.get(a.id);
+    // If we already have this alert, merge — letting later messages add
+    // fields (e.g. aiSummary attached after the fact) without duplicating.
+    byId.set(a.id, existing ? { ...existing, ...a } : a);
   }
-  merged.sort((a, b) => a.time - b.time);
-  return merged.slice(-MAX_KEEP);
+  return Array.from(byId.values())
+    .sort((a, b) => a.time - b.time)
+    .slice(-MAX_KEEP);
 }

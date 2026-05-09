@@ -46,6 +46,8 @@ export interface Alert {
   headline: string;
   /** Optional structured payload for downstream (journal, AI). */
   meta?: Record<string, unknown>;
+  /** AI summary attached after the fact when ANALYZE_ON_ALERT=true. */
+  aiSummary?: string;
 }
 
 export type AdapterState =

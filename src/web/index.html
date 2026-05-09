@@ -5,7 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trading App</title>
     <style>
-      html, body, #root { height: 100%; margin: 0; background: #0d1117; color: #c9d1d9; font-family: ui-monospace, Menlo, monospace; }
+      html, body, #root { height: 100%; margin: 0; font-family: ui-monospace, Menlo, monospace; }
+      html { background: #0d1117; color: #c9d1d9; }
+      html[data-theme="light"] { background: #f6f8fa; color: #1f2328; }
+      html[data-theme="light"] body { background: #f6f8fa; color: #1f2328; }
+      /* Light theme: invert the chart cell background — best-effort, the
+         bulk of inline-style colors stay dark. Switching back to dark is
+         lossless. */
+      html[data-theme="light"] body > #root > div { background: #f6f8fa; }
       * { box-sizing: border-box; }
       /* Mobile / narrow viewport: collapse the chart grid to a single column
          regardless of `cols` setting, and stack floating panels under the grid

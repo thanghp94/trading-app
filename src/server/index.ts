@@ -9,6 +9,7 @@ import { SymbolManager } from './symbol-manager.js';
 import { AlertEngine } from './alerts/alert-engine.js';
 import { analyzeChart } from './ai/analyze.js';
 import { JournalStore } from './journal/store.js';
+import { RiskGuards } from './journal/risk-guards.js';
 import { runBacktest, type BacktestRequest } from './backtest/backtest-engine.js';
 import { rankWatchlist } from './scanner/watchlist-scanner.js';
 import { SubscriberStore } from './public-feed/subscribers.js';
@@ -33,9 +34,22 @@ const sockets = new Set<{ send: (msg: ServerMessage) => void }>();
 const journal = new JournalStore();
 const subscribers = new SubscriberStore();
 const autoExecutor = new AutoExecutor();
+const riskGuards = new RiskGuards(journal);
 fastify.log.info(`[exec] auto-execute mode: ${autoExecutor.getMode()}`);
 
+const ANALYZE_ON_ALERT = process.env.ANALYZE_ON_ALERT === 'true';
+
 const broadcastAlert = (alert: Alert) => {
+  const blocked = riskGuards.check();
+  if (blocked) {
+    fastify.log.warn(`[risk] alert suppressed: ${blocked}`);
+    // Still broadcast to UI so user sees what was filtered, but tag it.
+    const tagged: Alert = { ...alert, headline: `[BLOCKED: ${blocked}] ${alert.headline}` };
+    const msg: ServerMessage = { type: 'alert', alert: tagged };
+    for (const s of sockets) s.send(msg);
+    return;
+  }
+
   const msg: ServerMessage = { type: 'alert', alert };
   for (const s of sockets) s.send(msg);
   try {
@@ -43,10 +57,40 @@ const broadcastAlert = (alert: Alert) => {
   } catch (err) {
     fastify.log.error({ err }, '[journal] log failed');
   }
-  // Optional auto-execution. No-op when AUTO_EXECUTE_MODE is unset/off.
   void autoExecutor.maybeExecute(alert).catch((err) => {
     fastify.log.error({ err }, '[exec] maybeExecute failed');
   });
+
+  // Async AI auto-analyze: fetch the evaluator's recent state and ask Claude
+  // for a 5-sentence read. Result is broadcast as an alert-update so any
+  // connected client can attach the summary to the alert in their panel.
+  if (ANALYZE_ON_ALERT) {
+    void (async () => {
+      try {
+        const snapshots = alertEngine.snapshots();
+        const stream = snapshots.find((s) => s.symbol === alert.symbol && s.timeframe === alert.timeframe);
+        if (!stream) return;
+        const { computeZones } = await import('../shared/indicators/sr-zone-tracker.js');
+        const { computeWaves } = await import('../shared/indicators/wave-counter.js');
+        const zones = computeZones(stream.candles);
+        const waves = computeWaves(stream.candles);
+        const ai = await analyzeChart({
+          symbol: alert.symbol,
+          timeframe: alert.timeframe,
+          candles: stream.candles,
+          zones,
+          waves,
+        });
+        if (ai.ok && ai.text) {
+          const updated: Alert = { ...alert, aiSummary: ai.text };
+          const updateMsg: ServerMessage = { type: 'alert', alert: updated };
+          for (const s of sockets) s.send(updateMsg);
+        }
+      } catch (err) {
+        fastify.log.error({ err }, '[alerts] auto-analyze failed');
+      }
+    })();
+  }
 };
 
 const alertEngine = new AlertEngine(broadcastAlert);

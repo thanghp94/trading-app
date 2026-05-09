@@ -6,16 +6,17 @@ const STORAGE_KEY = 'trading-app:notify-prefs-v1';
 interface NotifyPrefs {
   sound: boolean;
   titleBadge: boolean;
+  voice: boolean;
 }
 
 function loadPrefs(): NotifyPrefs {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { sound: true, titleBadge: true, ...(JSON.parse(raw) as Partial<NotifyPrefs>) };
+    if (raw) return { sound: true, titleBadge: true, voice: false, ...(JSON.parse(raw) as Partial<NotifyPrefs>) };
   } catch {
     /* ignore */
   }
-  return { sound: true, titleBadge: true };
+  return { sound: true, titleBadge: true, voice: false };
 }
 
 export function savePrefs(prefs: NotifyPrefs) {
@@ -81,9 +82,22 @@ export function useAlertNotifications(alerts: Alert[]) {
         unreadRef.current += 1;
         document.title = `(${unreadRef.current}) ${baseTitleRef.current}`;
       }
+      if (prefs.voice) speakAlert(a);
     }
     void firedAny;
   }, [alerts]);
+}
+
+function speakAlert(a: { headline: string }) {
+  try {
+    if (!window.speechSynthesis) return;
+    const u = new SpeechSynthesisUtterance(a.headline);
+    u.rate = 1.05;
+    u.volume = 0.8;
+    window.speechSynthesis.speak(u);
+  } catch {
+    /* speech unavailable */
+  }
 }
 
 const pageLoadedAt = Date.now();

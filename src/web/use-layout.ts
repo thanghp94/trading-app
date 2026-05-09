@@ -7,6 +7,8 @@ export interface CellConfig {
   timeframe: Timeframe;
   showEmas?: boolean;
   showHtfZones?: boolean;
+  /** Render Heikin-Ashi candles instead of raw OHLC. Indicators still run on raw data. */
+  heikinAshi?: boolean;
 }
 
 export interface GridLayoutConfig {

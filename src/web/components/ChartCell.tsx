@@ -2,6 +2,7 @@ import { Chart } from './Chart.js';
 import { ReplayControls } from './ReplayControls.js';
 import { AnalyzeButton } from './AnalyzeButton.js';
 import { BacktestPanel } from './BacktestPanel.js';
+import { heikinAshi } from '../../shared/indicators/heikin-ashi.js';
 import { useFeed } from '../use-feed.js';
 import { useZones } from '../use-zones.js';
 import { useWaves } from '../use-waves.js';
@@ -83,6 +84,14 @@ export function ChartCell({ cell, active: isActive, onChange, onRemove, onFocus 
         >
           HTF
         </button>
+        <button
+          type="button"
+          onClick={() => onChange({ heikinAshi: !cell.heikinAshi })}
+          title="Toggle Heikin-Ashi candle smoothing"
+          style={{ ...toggleBtnStyle, ...(cell.heikinAshi ? toggleActiveStyle : {}) }}
+        >
+          HA
+        </button>
         <AnalyzeButton symbol={cell.symbol} timeframe={cell.timeframe} candles={candles} zones={zones} waves={waves} />
         <BacktestPanel symbol={cell.symbol} timeframe={cell.timeframe} candles={candles} />
         <ReplayControls
@@ -114,7 +123,7 @@ export function ChartCell({ cell, active: isActive, onChange, onRemove, onFocus 
       {error && <div style={errorBannerStyle}>✗ {error}</div>}
       <div style={{ flex: 1, minHeight: 0 }}>
         <Chart
-          candles={candles}
+          candles={cell.heikinAshi ? heikinAshi(candles) : candles}
           zones={zones}
           htfZones={cell.showHtfZones ? htfZones : []}
           waves={waves}
