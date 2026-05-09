@@ -30,10 +30,19 @@ export const VOL_SMA_PERIOD = 20;
 
 /**
  * For zero-volume markets (forex spot, where TwelveData returns volume=0),
- * volume confirmation cannot be enforced. When this is true, impulse fires
- * on the strong-bar rule alone.
+ * volume confirmation cannot be enforced. When this is true, impulse falls
+ * back to a RANGE-EXPANSION proxy: the bar must be unusually wide vs ATR.
+ * This is a stand-in for "high participation" since wide bars correlate
+ * with institutional flow even when raw volume isn't available.
  */
 export const ALLOW_ZERO_VOLUME_CONFIRM = true;
+
+/**
+ * When ALLOW_ZERO_VOLUME_CONFIRM applies, require range / ATR(14) > this
+ * value before treating the bar as a confirmed impulse. Defaults to 1.2 —
+ * the bar must be appreciably wider than typical recent bars. Tunable.
+ */
+export const RANGE_EXPANSION_ATR = 1.2;
 
 // ───────── Wave counter rules ─────────
 

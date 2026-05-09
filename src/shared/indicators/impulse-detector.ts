@@ -1,6 +1,7 @@
 import type { Candle } from '../types.js';
 import {
   ALLOW_ZERO_VOLUME_CONFIRM,
+  RANGE_EXPANSION_ATR,
   STRONG_BAR_BODY_ATR,
   STRONG_BAR_BODY_RANGE,
   STRONG_BAR_CLOSE_POSITION,
@@ -86,8 +87,13 @@ export function detectImpulses(candles: Candle[]): ImpulseHit[] {
       continue;
     }
 
-    // Volume confirmation. For zero-volume markets (forex spot), skip the
-    // check when the configuration allows.
+    // Volume confirmation. Two paths:
+    //   - Real volume available (crypto, equities) → require vol > VOL_MULTIPLIER × SMA(20)
+    //   - Volume = 0 (forex spot — TwelveData/OANDA) → fall back to RANGE-EXPANSION proxy:
+    //     the bar's range / ATR(14) must exceed RANGE_EXPANSION_ATR.
+    //     A wide bar correlates with institutional participation even when raw
+    //     volume isn't available — this is the closest stand-in for "high volume"
+    //     on XAU/USD that still meaningfully filters out small-bodied chop.
     let volumeConfirmed = false;
     let volumeRatio = NaN;
     const hasVolumeData = c.volume > 0 && Number.isFinite(vsma) && vsma > 0;
@@ -95,7 +101,13 @@ export function detectImpulses(candles: Candle[]): ImpulseHit[] {
       volumeRatio = c.volume / vsma;
       volumeConfirmed = volumeRatio > VOL_MULTIPLIER;
       if (!volumeConfirmed) continue;
-    } else if (!ALLOW_ZERO_VOLUME_CONFIRM) {
+    } else if (ALLOW_ZERO_VOLUME_CONFIRM) {
+      // Range-expansion fallback for zero-volume markets.
+      const rangeRatio = range / a;
+      if (rangeRatio <= RANGE_EXPANSION_ATR) continue;
+      // Treat as "confirmed" via the proxy; volumeRatio stays NaN to signal
+      // "real volume not available, range-expansion proxy fired".
+    } else {
       continue;
     }
 

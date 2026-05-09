@@ -35,10 +35,13 @@ interface BacktestResult {
 export function BacktestPanel(props: BacktestPanelProps) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [slMode, setSlMode] = useState<'pct' | 'trigger-wick'>('trigger-wick');
+  const [tpMode, setTpMode] = useState<'rr' | 'next-resistance'>('next-resistance');
   const [slPct, setSlPct] = useState('0.5');
   const [rrTarget, setRrTarget] = useState('2');
   const [maxBars, setMaxBars] = useState('30');
   const [riskPct, setRiskPct] = useState('1');
+  const [preferredOnly, setPreferredOnly] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
 
   const run = async () => {
@@ -51,11 +54,16 @@ export function BacktestPanel(props: BacktestPanelProps) {
           symbol: props.symbol,
           timeframe: props.timeframe,
           candles: props.candles,
+          slMode,
           slPct: Number(slPct) / 100,
+          slBufferAtr: 0.1,
+          tpMode,
           rrTarget: Number(rrTarget),
+          tpBufferAtr: 0.1,
           maxBars: Number(maxBars),
           riskPct: Number(riskPct),
           startingBalance: 10_000,
+          preferredOnly,
         }),
       });
       const json = (await res.json()) as BacktestResult;
@@ -83,9 +91,31 @@ export function BacktestPanel(props: BacktestPanelProps) {
             <span>{props.symbol} {props.timeframe} — Backtest</span>
             <button type="button" onClick={() => setOpen(false)} style={closeBtnStyle}>×</button>
           </div>
+          <div style={modeRowStyle}>
+            <Field label="SL mode">
+              <select value={slMode} onChange={(e) => setSlMode(e.target.value as 'pct' | 'trigger-wick')} style={selectStyle}>
+                <option value="trigger-wick">Trigger wick ★</option>
+                <option value="pct">Pct of entry</option>
+              </select>
+            </Field>
+            <Field label="TP mode">
+              <select value={tpMode} onChange={(e) => setTpMode(e.target.value as 'rr' | 'next-resistance')} style={selectStyle}>
+                <option value="next-resistance">Next resistance ★</option>
+                <option value="rr">R:R fixed</option>
+              </select>
+            </Field>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#8b949e', cursor: 'pointer' }}>
+              <input type="checkbox" checked={preferredOnly} onChange={(e) => setPreferredOnly(e.target.checked)} />
+              Preferred only (★ wave-5)
+            </label>
+          </div>
           <div style={paramsStyle}>
-            <Field label="SL %"><input type="number" step="any" value={slPct} onChange={(e) => setSlPct(e.target.value)} style={inputStyle} /></Field>
-            <Field label="R:R"><input type="number" step="any" value={rrTarget} onChange={(e) => setRrTarget(e.target.value)} style={inputStyle} /></Field>
+            <Field label={slMode === 'pct' ? 'SL %' : 'SL % (fallback)'}>
+              <input type="number" step="any" value={slPct} onChange={(e) => setSlPct(e.target.value)} style={inputStyle} />
+            </Field>
+            <Field label={tpMode === 'rr' ? 'R:R' : 'R:R (fallback)'}>
+              <input type="number" step="any" value={rrTarget} onChange={(e) => setRrTarget(e.target.value)} style={inputStyle} />
+            </Field>
             <Field label="Max bars"><input type="number" value={maxBars} onChange={(e) => setMaxBars(e.target.value)} style={inputStyle} /></Field>
             <Field label="Risk %"><input type="number" step="any" value={riskPct} onChange={(e) => setRiskPct(e.target.value)} style={inputStyle} /></Field>
             <button type="button" onClick={run} disabled={busy} style={runBtnStyle}>
@@ -176,7 +206,14 @@ const panelHeaderStyle: React.CSSProperties = {
   fontSize: 11,
   color: '#c9d1d9',
 };
+const modeRowStyle: React.CSSProperties = {
+  display: 'flex', gap: 8, padding: '8px 10px 0', alignItems: 'flex-end', flexWrap: 'wrap',
+};
 const paramsStyle: React.CSSProperties = { display: 'flex', gap: 6, padding: 10, alignItems: 'flex-end' };
+const selectStyle: React.CSSProperties = {
+  fontSize: 11, fontFamily: 'inherit', padding: '2px 4px',
+  background: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: 3,
+};
 const inputStyle: React.CSSProperties = {
   fontSize: 11,
   fontFamily: 'inherit',
