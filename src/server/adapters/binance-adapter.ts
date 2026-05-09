@@ -109,6 +109,18 @@ export class BinanceAdapter extends BaseDataAdapter {
     const url = `${WS_BASE}?streams=${streams}`;
     this.setState(this.ws ? 'reconnecting' : 'connecting');
 
+    // Close any prior socket cleanly before opening a new one (e.g. when a
+    // new subscription is added at runtime — switching timeframes in the UI).
+    if (this.ws) {
+      const old = this.ws;
+      old.removeAllListeners();
+      try {
+        old.close();
+      } catch {
+        /* ignore */
+      }
+    }
+
     const ws = new WebSocket(url);
     this.ws = ws;
 
