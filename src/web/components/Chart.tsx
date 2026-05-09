@@ -19,6 +19,7 @@ import type { Candle, Zone } from '../../shared/types.js';
 import type { WaveCount } from '../../shared/indicators/wave-counter.js';
 import type { EmaSeries } from '../use-emas.js';
 import { ZonePrimitive } from './zone-primitive.js';
+import { crosshairBus } from '../crosshair-bus.js';
 
 interface ChartProps {
   candles: Candle[];
@@ -81,7 +82,37 @@ export function Chart({ candles, zones = [], htfZones = [], waves = [], emas = [
     htfZonePrimitiveRef.current = htfZonePrimitive;
     markersRef.current = markers;
 
+    // Crosshair sync: when this chart's crosshair moves, broadcast the
+    // bar time. When another chart broadcasts, place our crosshair to
+    // match. The `selfMoving` ref breaks the loop so we don't echo our
+    // own publishes back into ourselves.
+    let selfMoving = false;
+    const onCrosshair = (param: { time?: number | string | null | unknown }) => {
+      if (selfMoving) return;
+      const raw = param.time;
+      const t = typeof raw === 'number' ? raw : null;
+      crosshairBus.publish(t);
+    };
+    chart.subscribeCrosshairMove(onCrosshair as never);
+    const unsubBus = crosshairBus.subscribe((time) => {
+      if (!candleSeriesRef.current) return;
+      selfMoving = true;
+      try {
+        if (time == null) {
+          chart.clearCrosshairPosition();
+        } else {
+          chart.setCrosshairPosition(NaN, time as never, candleSeriesRef.current);
+        }
+      } catch {
+        /* outside this chart's range — ignore */
+      } finally {
+        selfMoving = false;
+      }
+    });
+
     return () => {
+      try { chart.unsubscribeCrosshairMove(onCrosshair as never); } catch { /* already removed */ }
+      unsubBus();
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;

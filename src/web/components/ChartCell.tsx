@@ -21,11 +21,14 @@ const SYMBOL_GROUPS: Array<{ label: string; symbols: string[] }> = [
 
 interface ChartCellProps {
   cell: CellConfig;
+  /** Active cell receives keyboard shortcut focus (1-6 timeframe, etc). */
+  active?: boolean;
   onChange: (patch: Partial<CellConfig>) => void;
   onRemove: () => void;
+  onFocus?: () => void;
 }
 
-export function ChartCell({ cell, onChange, onRemove }: ChartCellProps) {
+export function ChartCell({ cell, active: isActive, onChange, onRemove, onFocus }: ChartCellProps) {
   const { candles: liveCandles, status, error } = useFeed({ symbol: cell.symbol, timeframe: cell.timeframe });
   const replay = useReplay(liveCandles);
   const candles = replay.candles;
@@ -41,7 +44,10 @@ export function ChartCell({ cell, onChange, onRemove }: ChartCellProps) {
   const completedWaves = waves.filter((w) => w.resetReason === 'completed').length;
 
   return (
-    <div style={cellWrapStyle}>
+    <div
+      style={{ ...cellWrapStyle, borderColor: isActive ? '#1f6feb' : '#30363d', boxShadow: isActive ? '0 0 0 1px #1f6feb' : undefined }}
+      onClick={onFocus}
+    >
       <div style={toolbarStyle}>
         <select value={cell.symbol} onChange={(e) => onChange({ symbol: e.target.value })} style={selectStyle}>
           {SYMBOL_GROUPS.map((g) => (
