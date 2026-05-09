@@ -9,6 +9,7 @@ import { useWaves } from '../use-waves.js';
 import { useEmas } from '../use-emas.js';
 import { useHtfZones } from '../use-htf-zones.js';
 import { useReplay } from '../use-replay.js';
+import { usePreparingImpulse } from '../use-preparing-impulse.js';
 import type { Timeframe } from '../../shared/types.js';
 import type { CellConfig } from '../use-layout.js';
 
@@ -37,6 +38,10 @@ export function ChartCell({ cell, active: isActive, onChange, onRemove, onFocus 
   const waves = useWaves(candles);
   const emas = useEmas(candles);
   const htfZones = useHtfZones(candles, cell.timeframe);
+  // Live-bar impulse "preparing" detection — encodes "có xác nhận mới trade":
+  // show a yellow warning while the forming bar passes impulse criteria.
+  // Disabled in replay mode (the replayed bars are all closed).
+  const preparing = usePreparingImpulse(replay.mode === 'live' ? liveCandles : []);
 
   const active = zones.filter((z) => z.state === 'active').length;
   const broken = zones.filter((z) => z.state === 'broken').length;
@@ -121,6 +126,13 @@ export function ChartCell({ cell, active: isActive, onChange, onRemove, onFocus 
         <button type="button" onClick={onRemove} title="Remove chart" style={removeBtnStyle}>×</button>
       </div>
       {error && <div style={errorBannerStyle}>✗ {error}</div>}
+      {preparing.preparing && (
+        <div style={preparingBannerStyle} className="preparing-pulse">
+          ⚠ Preparing — strong {preparing.direction} bar forming · body {preparing.bodyAtr.toFixed(2)}×ATR
+          {Number.isFinite(preparing.volumeRatio) && ` · vol ${preparing.volumeRatio.toFixed(1)}×SMA`}
+          {' · '}<b>wait for bar close before entering</b>
+        </div>
+      )}
       <div style={{ flex: 1, minHeight: 0 }}>
         <Chart
           candles={cell.heikinAshi ? heikinAshi(candles) : candles}
@@ -208,4 +220,12 @@ const errorBannerStyle: React.CSSProperties = {
   padding: '4px 8px',
   background: 'rgba(248, 81, 73, 0.08)',
   borderBottom: '1px solid rgba(248, 81, 73, 0.4)',
+};
+
+const preparingBannerStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: '#d4a72c',
+  padding: '4px 8px',
+  background: 'rgba(212, 167, 44, 0.10)',
+  borderBottom: '1px solid rgba(212, 167, 44, 0.5)',
 };

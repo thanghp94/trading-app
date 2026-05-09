@@ -14,6 +14,13 @@
          lossless. */
       html[data-theme="light"] body > #root > div { background: #f6f8fa; }
       * { box-sizing: border-box; }
+      /* Pulse animation for the "preparing" banner — gentle attention pull
+         without being annoying. */
+      .preparing-pulse { animation: preparing-pulse 1.4s ease-in-out infinite; }
+      @keyframes preparing-pulse {
+        0%, 100% { background: rgba(212, 167, 44, 0.10); }
+        50%      { background: rgba(212, 167, 44, 0.22); }
+      }
       /* Mobile / narrow viewport: collapse the chart grid to a single column
          regardless of `cols` setting, and stack floating panels under the grid
          so they don't cover the only visible chart. */
