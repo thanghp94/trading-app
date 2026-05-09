@@ -1,17 +1,14 @@
 import { Chart } from './Chart.js';
+import { ReplayControls } from './ReplayControls.js';
 import { useFeed } from '../use-feed.js';
 import { useZones } from '../use-zones.js';
 import { useWaves } from '../use-waves.js';
+import { useReplay } from '../use-replay.js';
 import type { Timeframe } from '../../shared/types.js';
 import type { CellConfig } from '../use-layout.js';
 
 const TIMEFRAMES: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
 
-/**
- * Symbols the user can pick per cell. Group prefixes help the dropdown stay
- * readable when the list grows. Adding new tickers here is enough — backend
- * routing in SymbolManager already handles crypto vs forex/metals.
- */
 const SYMBOL_GROUPS: Array<{ label: string; symbols: string[] }> = [
   { label: 'Crypto (Binance)', symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'PAXGUSDT', 'XAUTUSDT'] },
   { label: 'Forex/Metals (TwelveData)', symbols: ['XAUUSD', 'XAGUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD'] },
@@ -24,9 +21,15 @@ interface ChartCellProps {
 }
 
 export function ChartCell({ cell, onChange, onRemove }: ChartCellProps) {
-  const { candles, status, error } = useFeed({ symbol: cell.symbol, timeframe: cell.timeframe });
+  const { candles: liveCandles, status, error } = useFeed({ symbol: cell.symbol, timeframe: cell.timeframe });
+  // Replay slices the candle stream at a cursor — all indicators downstream
+  // see only candles[0..cursor], so they recompute exactly as they would
+  // have at that moment in real time.
+  const replay = useReplay(liveCandles);
+  const candles = replay.candles;
   const zones = useZones(candles);
   const waves = useWaves(candles);
+
   const active = zones.filter((z) => z.state === 'active').length;
   const broken = zones.filter((z) => z.state === 'broken').length;
   const flipped = zones.filter((z) => z.flipped).length;
@@ -54,6 +57,18 @@ export function ChartCell({ cell, onChange, onRemove }: ChartCellProps) {
             <option key={tf} value={tf}>{tf}</option>
           ))}
         </select>
+        <ReplayControls
+          mode={replay.mode}
+          cursor={replay.cursor}
+          total={replay.total}
+          playing={replay.playing}
+          speed={replay.speed}
+          onEnterReplay={replay.enterReplay}
+          onExitReplay={replay.exitReplay}
+          onStep={replay.step}
+          onPlay={replay.setPlaying}
+          onSpeed={replay.setSpeed}
+        />
         <span style={statusStyle}>
           {error ? '✗' : status === 'live' ? '●' : status === 'connecting' ? '◌' : '○'}
           <span style={{ marginLeft: 4, opacity: 0.7 }}>
@@ -93,6 +108,7 @@ const toolbarStyle: React.CSSProperties = {
   padding: '4px 6px',
   background: '#161b22',
   borderBottom: '1px solid #30363d',
+  flexWrap: 'wrap',
 };
 
 const selectStyle: React.CSSProperties = {
@@ -112,6 +128,7 @@ const statusStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   color: '#8b949e',
+  marginLeft: 'auto',
 };
 
 const removeBtnStyle: React.CSSProperties = {
