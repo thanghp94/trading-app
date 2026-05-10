@@ -111,6 +111,27 @@ export function useLayout() {
 
   const reset = () => updateActive(() => DEFAULT_LAYOUT);
 
+  /**
+   * Open the active symbol as a 3-cell H1/15m/5m triplet. All three cells
+   * share the same symbol, so the click-bus syncs them: clicking a bar on
+   * any one scrolls the other two to the same area. Mirrors the user's
+   * "1H + 15m + 5m" mental workflow from the screenshot triplets.
+   *
+   * Replaces the current layout entirely — switches cols=3, drops other
+   * cells. Use a saved preset to come back to the prior layout.
+   */
+  const openTriplet = (symbol: string) => {
+    const triplet: GridLayoutConfig = {
+      cols: 3,
+      cells: [
+        { id: `tr-h1-${Date.now()}`, symbol, timeframe: '1h', showEmas: true, showHtfZones: false },
+        { id: `tr-15m-${Date.now()}`, symbol, timeframe: '15m', showEmas: true, showHtfZones: true },
+        { id: `tr-5m-${Date.now()}`, symbol, timeframe: '5m', showEmas: true, showHtfZones: true },
+      ],
+    };
+    setRoot((r) => ({ ...r, active: triplet }));
+  };
+
   // ──────── Named presets ────────
 
   const saveCurrent = (name: string) => {
@@ -147,5 +168,6 @@ export function useLayout() {
     saveCurrent,
     applySaved,
     deleteSaved,
+    openTriplet,
   };
 }

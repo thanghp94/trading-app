@@ -21,6 +21,7 @@ export function App() {
     layout, saved,
     updateCell, addCell, removeCell, setCols, reset,
     saveCurrent, applySaved, deleteSaved,
+    openTriplet,
   } = useLayout();
   const { alerts, clearAlerts } = useAlerts();
   useAlertNotifications(alerts);
@@ -111,6 +112,7 @@ export function App() {
             onChange={(patch) => updateCell(cell.id, patch)}
             onRemove={() => removeCell(cell.id)}
             onFocus={() => setActiveIdx(i)}
+            onTriplet={openTriplet}
           />
         ))}
         {layout.cells.length === 0 && (

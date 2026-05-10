@@ -20,6 +20,7 @@ import type { WaveCount } from '../../shared/indicators/wave-counter.js';
 import type { EmaSeries } from '../use-emas.js';
 import { ZonePrimitive } from './zone-primitive.js';
 import { crosshairBus } from '../crosshair-bus.js';
+import { clickBus } from '../click-bus.js';
 
 interface ChartProps {
   candles: Candle[];
@@ -27,6 +28,8 @@ interface ChartProps {
   htfZones?: Zone[];
   waves?: WaveCount[];
   emas?: EmaSeries[];
+  /** Symbol the cell shows. Used to filter click-sync events between cells. */
+  symbol?: string;
 }
 
 const DARK_THEME = {
@@ -39,7 +42,7 @@ const DARK_THEME = {
 const UP = '#26a69a';
 const DOWN = '#ef5350';
 
-export function Chart({ candles, zones = [], htfZones = [], waves = [], emas = [] }: ChartProps) {
+export function Chart({ candles, zones = [], htfZones = [], waves = [], emas = [], symbol = '' }: ChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -48,6 +51,15 @@ export function Chart({ candles, zones = [], htfZones = [], waves = [], emas = [
   const htfZonePrimitiveRef = useRef<ZonePrimitive | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const emaSeriesRef = useRef<Map<number, ISeriesApi<'Line'>>>(new Map());
+  const waveLineSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  const symbolRef = useRef<string>(symbol);
+  const candleStrideSeconds = useRef<number>(60);
+  // Keep refs current for the chart-init effect closure (which only runs once).
+  symbolRef.current = symbol;
+  if (candles.length >= 2) {
+    const stride = candles[candles.length - 1].time - candles[candles.length - 2].time;
+    if (stride > 0) candleStrideSeconds.current = stride;
+  }
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -94,6 +106,34 @@ export function Chart({ candles, zones = [], htfZones = [], waves = [], emas = [
       crosshairBus.publish(t);
     };
     chart.subscribeCrosshairMove(onCrosshair as never);
+
+    // Click sync: publish on click; subscribe to reposition when another
+    // cell with the SAME symbol publishes. Different-symbol cells ignore.
+    let selfClicking = false;
+    const onClick = (param: { time?: number | string | null | unknown }) => {
+      if (selfClicking) return;
+      const raw = param.time;
+      const t = typeof raw === 'number' ? raw : null;
+      if (t != null && symbolRef.current) clickBus.publish(t, symbolRef.current);
+    };
+    chart.subscribeClick(onClick as never);
+    const unsubClickBus = clickBus.subscribe((time, sym) => {
+      if (sym !== symbolRef.current) return;
+      selfClicking = true;
+      try {
+        // Center the visible range on the clicked time (~50 bars on either side).
+        const stride = candleStrideSeconds.current;
+        const span = stride * 100;
+        chart.timeScale().setVisibleRange({
+          from: (time - span / 2) as Time,
+          to: (time + span / 2) as Time,
+        });
+      } catch {
+        /* time outside loaded range — ignore */
+      } finally {
+        selfClicking = false;
+      }
+    });
     const unsubBus = crosshairBus.subscribe((time) => {
       if (!candleSeriesRef.current) return;
       selfMoving = true;
@@ -112,7 +152,9 @@ export function Chart({ candles, zones = [], htfZones = [], waves = [], emas = [
 
     return () => {
       try { chart.unsubscribeCrosshairMove(onCrosshair as never); } catch { /* already removed */ }
+      try { chart.unsubscribeClick(onClick as never); } catch { /* already removed */ }
       unsubBus();
+      unsubClickBus();
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -121,6 +163,7 @@ export function Chart({ candles, zones = [], htfZones = [], waves = [], emas = [
       htfZonePrimitiveRef.current = null;
       markersRef.current = null;
       emaSeriesRef.current.clear();
+      waveLineSeriesRef.current.clear();
     };
   }, []);
 
@@ -153,6 +196,46 @@ export function Chart({ candles, zones = [], htfZones = [], waves = [], emas = [
   useEffect(() => {
     if (!markersRef.current) return;
     markersRef.current.setMarkers(wavesToMarkers(waves));
+  }, [waves]);
+
+  // Wave zigzag lines — one LineSeries per active wave count, connecting
+  // points 0→1→2→3→4→5. Color reflects state (yellow active, green completed,
+  // gray reset). Mirrors the manual yellow zigzag from the user's screenshots.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const present = new Set(waves.map((w) => w.id));
+    // Drop series whose wave count no longer exists.
+    for (const [id, series] of waveLineSeriesRef.current.entries()) {
+      if (!present.has(id)) {
+        try { chart.removeSeries(series); } catch { /* already gone */ }
+        waveLineSeriesRef.current.delete(id);
+      }
+    }
+    for (const w of waves) {
+      const completed = w.resetReason === 'completed';
+      const reset = !w.active && !completed;
+      const color = completed ? '#26a69a' : reset ? '#6e7681' : '#d4a72c';
+      let series = waveLineSeriesRef.current.get(w.id);
+      if (!series) {
+        series = chart.addSeries(LineSeries, {
+          color,
+          lineWidth: 1,
+          lineStyle: 0, // solid
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        waveLineSeriesRef.current.set(w.id, series);
+      } else {
+        series.applyOptions({ color });
+      }
+      const data: LineData[] = w.points
+        .slice()
+        .sort((a, b) => a.time - b.time)
+        .map((p) => ({ time: p.time as UTCTimestamp, value: p.price }));
+      series.setData(data);
+    }
   }, [waves]);
 
   useEffect(() => {

@@ -28,9 +28,11 @@ interface ChartCellProps {
   onChange: (patch: Partial<CellConfig>) => void;
   onRemove: () => void;
   onFocus?: () => void;
+  /** Open this cell's symbol as a 1H/15m/5m triplet (replaces the layout). */
+  onTriplet?: (symbol: string) => void;
 }
 
-export function ChartCell({ cell, active: isActive, onChange, onRemove, onFocus }: ChartCellProps) {
+export function ChartCell({ cell, active: isActive, onChange, onRemove, onFocus, onTriplet }: ChartCellProps) {
   const { candles: liveCandles, status, error } = useFeed({ symbol: cell.symbol, timeframe: cell.timeframe });
   const replay = useReplay(liveCandles);
   const candles = replay.candles;
@@ -97,6 +99,16 @@ export function ChartCell({ cell, active: isActive, onChange, onRemove, onFocus 
         >
           HA
         </button>
+        {onTriplet && (
+          <button
+            type="button"
+            onClick={() => onTriplet(cell.symbol)}
+            title="Open this symbol as 1H/15m/5m triplet — click any bar to sync the other two"
+            style={toggleBtnStyle}
+          >
+            🪟 Triplet
+          </button>
+        )}
         <AnalyzeButton symbol={cell.symbol} timeframe={cell.timeframe} candles={candles} zones={zones} waves={waves} />
         <BacktestPanel symbol={cell.symbol} timeframe={cell.timeframe} candles={candles} />
         <ReplayControls
@@ -140,6 +152,7 @@ export function ChartCell({ cell, active: isActive, onChange, onRemove, onFocus 
           htfZones={cell.showHtfZones ? htfZones : []}
           waves={waves}
           emas={cell.showEmas ? emas : []}
+          symbol={cell.symbol}
         />
       </div>
     </div>
