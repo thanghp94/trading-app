@@ -44,19 +44,38 @@ export function computeZones(candles: Candle[], opts: ComputeOpts = {}): Zone[] 
   // `clusterAtrMult × ATR` (using ATR at the most recent pivot's bar).
   const clusters = clusterPivots(pivots, atrSeries, clusterAtrMult);
 
-  // Build a zone per cluster. Type = the kind of the most recent pivot in the cluster.
+  // Build a zone per cluster. Type = strength-weighted majority kind, with
+  // the most-recent pivot breaking ties (recency tilts the call). Zone
+  // strength = sum of all pivot strengths.
   const zones: Zone[] = clusters.map((cluster, idx) => {
     const lastPivot = cluster[cluster.length - 1];
     const allTops = cluster.map((p) => (p.kind === 'high' ? p.wick : p.body));
     const allBottoms = cluster.map((p) => (p.kind === 'low' ? p.wick : p.body));
+
+    // Strength-weighted vote on type. Pivots with high strength count more.
+    let highWeight = 0;
+    let lowWeight = 0;
+    for (const p of cluster) {
+      if (p.kind === 'high') highWeight += p.strength;
+      else lowWeight += p.strength;
+    }
+    let type: 'resistance' | 'support';
+    if (highWeight > lowWeight) type = 'resistance';
+    else if (lowWeight > highWeight) type = 'support';
+    else type = lastPivot.kind === 'high' ? 'resistance' : 'support'; // tie → recency
+
+    const totalStrength = cluster.reduce((acc, p) => acc + p.strength, 0);
+
     return {
       id: `z${idx}_${lastPivot.time}`,
-      type: lastPivot.kind === 'high' ? 'resistance' : 'support',
+      type,
       state: 'active',
       top: Math.max(...allTops),
       bottom: Math.min(...allBottoms),
       formedAt: cluster[0].time,
       flipped: false,
+      strength: totalStrength,
+      pivotCount: cluster.length,
     };
   });
 

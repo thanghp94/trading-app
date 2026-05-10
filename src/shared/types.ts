@@ -77,4 +77,14 @@ export interface Zone {
   brokenAt?: number;
   /** True if this zone was broken and then flipped to the opposite type via role reversal. */
   flipped: boolean;
+  /**
+   * Sum of pivot strengths in the cluster. Higher = stronger zone.
+   * Used to drive opacity in rendering, scoring in the watchlist scanner,
+   * and AI-prompt context. Encodes the teacher's manual volume-arrow
+   * intuition: pivots with conspicuous volume + sharp rejection contribute
+   * more to the zone than weak fractals.
+   */
+  strength?: number;
+  /** Number of pivots in the cluster — secondary indicator of multi-touch zones. */
+  pivotCount?: number;
 }

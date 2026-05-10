@@ -51,6 +51,20 @@ class ZoneRenderer implements IPrimitivePaneRenderer {
       const timeScale = this.chart.timeScale();
       const chartWidth = bitmapSize.width;
 
+      // Compute the strength range across visible zones so we can normalize
+      // opacity. Strong zones (>P75) render at full alpha; weak zones (<P25)
+      // fade to ~40% so they don't compete with high-quality levels.
+      const strengths = this.zones
+        .map((z) => z.strength ?? 1)
+        .filter((s) => Number.isFinite(s));
+      const maxStrength = strengths.length > 0 ? Math.max(...strengths, 1) : 1;
+      const opacityFor = (strength: number | undefined): number => {
+        const s = strength ?? 1;
+        // Map strength → opacity multiplier in [0.4, 1.0]. Smooth ramp.
+        const ratio = Math.min(1, s / maxStrength);
+        return 0.4 + 0.6 * ratio;
+      };
+
       for (const z of this.zones) {
         const yTop = this.series.priceToCoordinate(z.top);
         const yBottom = this.series.priceToCoordinate(z.bottom);
@@ -84,11 +98,15 @@ class ZoneRenderer implements IPrimitivePaneRenderer {
               ? COLORS.supportEdge
               : COLORS.resistanceEdge;
 
+        // Scale fill alpha by strength. Broken zones stay at their nominal
+        // (already-faded) alpha — strength signal applies to active zones only.
+        const alphaScale = isBroken ? 1 : opacityFor(z.strength);
+        ctx.globalAlpha = alphaScale;
         ctx.fillStyle = fill;
         ctx.fillRect(x0, y0, w, h);
 
         ctx.strokeStyle = edge;
-        ctx.lineWidth = Math.max(1, vp);
+        ctx.lineWidth = Math.max(1, vp * (isBroken ? 1 : (1 + alphaScale)));
         if (z.flipped) {
           // Dashed edge to mark role-reversal zones — same color as the new type.
           ctx.setLineDash([6 * hp, 4 * hp]);
@@ -105,6 +123,7 @@ class ZoneRenderer implements IPrimitivePaneRenderer {
         ctx.stroke();
       }
       ctx.setLineDash([]);
+      ctx.globalAlpha = 1; // restore for any subsequent renderers
     });
   }
 }

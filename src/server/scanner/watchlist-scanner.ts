@@ -55,17 +55,22 @@ export function scoreOne({ symbol, timeframe, candles }: ScanInputs): ScannerEnt
     }
   }
 
-  // Recent zone touch.
+  // Recent zone touch — boosted when the touched zone has high pivot strength
+  // (the teacher's volume-arrow heuristic, automated).
   for (let i = candles.length - 4; i < candles.length; i += 1) {
     if (i < 0) continue;
     const c = candles[i];
     const touched = zones.find((z) => z.state === 'active' && c.high >= z.bottom && c.low <= z.top);
     if (touched) {
-      score += 20;
+      const baseBonus = 20;
+      // Strength multiplier: weak zone ~0.5×, average ~1×, strong ~1.5×.
+      const strength = touched.strength ?? 1;
+      const strengthMult = Math.min(1.5, Math.max(0.5, strength / 5));
+      score += Math.round(baseBonus * strengthMult);
       reasons.push(
-        `${touched.type} touched at ${touched.bottom.toFixed(4)}–${touched.top.toFixed(4)}${
-          touched.flipped ? ' (flipped — role reversal)' : ''
-        }`,
+        `${touched.type} touched at ${touched.bottom.toFixed(4)}–${touched.top.toFixed(4)}` +
+          ` (strength ${strength.toFixed(1)}, ${touched.pivotCount ?? 1} pivots)` +
+          (touched.flipped ? ' — flipped/role-reversal' : ''),
       );
       break;
     }

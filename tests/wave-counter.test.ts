@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeWaves } from '../src/shared/indicators/wave-counter.js';
 import { detectImpulses } from '../src/shared/indicators/impulse-detector.js';
+import { detectPivots } from '../src/shared/indicators/pivot-detector.js';
 import {
   buildCandles,
   bullImpulse,
@@ -138,6 +139,46 @@ describe('wave counter — reset rules', () => {
     expect(counts.length).toBe(1);
     expect(counts[0].active).toBe(false);
     expect(['chop-rejected', 'no-pivot-timeout']).toContain(counts[0].resetReason);
+  });
+});
+
+describe('pivot strength scoring', () => {
+  // Helper: build a peaked sequence with a configurable spike-bar at the apex.
+  // Symmetric V-shapes can produce equal highs on adjacent bars (no fractal),
+  // so we use an extreme upper wick at the apex to guarantee a strict swing high.
+  const peakedSequence = (apex: { wickMult: number; volMult: number }) =>
+    buildCandles([
+      ...quietWarmup(),
+      { trend: 1, bodyMult: 1 }, { trend: 1, bodyMult: 1 }, { trend: 1, bodyMult: 1 },
+      { trend: 1, bodyMult: 0.3, wickMult: apex.wickMult, volMult: apex.volMult }, // apex
+      { trend: -1, bodyMult: 1 }, { trend: -1, bodyMult: 1 }, { trend: -1, bodyMult: 1 },
+      { trend: -1, bodyMult: 1 },
+    ]);
+
+  it('a pivot with high volume + sharp rejection scores higher than a pivot with weak rejection', () => {
+    const strongCase = peakedSequence({ wickMult: 12, volMult: 4 });
+    const weakCase = peakedSequence({ wickMult: 4, volMult: 1 });
+
+    const strongHigh = detectPivots(strongCase)
+      .filter((p) => p.kind === 'high')
+      .sort((a, b) => b.strength - a.strength)[0];
+    const weakHigh = detectPivots(weakCase)
+      .filter((p) => p.kind === 'high')
+      .sort((a, b) => b.strength - a.strength)[0];
+
+    expect(strongHigh).toBeDefined();
+    expect(weakHigh).toBeDefined();
+    expect(strongHigh.strength).toBeGreaterThan(weakHigh.strength);
+  });
+
+  it('every detected pivot has a finite, positive strength', () => {
+    const candles = peakedSequence({ wickMult: 10, volMult: 2 });
+    const pivots = detectPivots(candles);
+    expect(pivots.length).toBeGreaterThan(0);
+    for (const p of pivots) {
+      expect(Number.isFinite(p.strength)).toBe(true);
+      expect(p.strength).toBeGreaterThan(0);
+    }
   });
 });
 
