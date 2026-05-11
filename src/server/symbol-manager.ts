@@ -1,7 +1,7 @@
 import type { Candle, Timeframe } from '../shared/types.js';
 import { BinanceAdapter } from './adapters/binance-adapter.js';
 import { OandaAdapter } from './adapters/oanda-adapter.js';
-import { TcbsAdapter } from './adapters/tcbs-adapter.js';
+import { YahooVnAdapter } from './adapters/yahoo-vn-adapter.js';
 import { TwelveDataAdapter } from './adapters/twelvedata-adapter.js';
 import type { BaseDataAdapter } from './adapters/base-data-adapter.js';
 
@@ -72,11 +72,13 @@ export class SymbolManager {
       oanda.on('error', (err) => this.onError(err));
       this.adapters.set('oanda', oanda);
     }
-    // TCBS needs no auth — always available for VN tickers.
-    const tcbs = new TcbsAdapter();
-    tcbs.on('candle', (c) => this.onCandle(c));
-    tcbs.on('error', (err) => this.onError(err));
-    this.adapters.set('tcbs', tcbs);
+    // Yahoo Finance for VN stocks — free, no auth, .VN suffix.
+    // Replaced TCBS (apipubaws.tcbs.com.vn endpoints now 404).
+    // Note: Yahoo doesn't cover VN30 futures — those need DNSE.
+    const yahooVn = new YahooVnAdapter();
+    yahooVn.on('candle', (c) => this.onCandle(c));
+    yahooVn.on('error', (err) => this.onError(err));
+    this.adapters.set('yahoo-vn', yahooVn);
   }
 
   private adapterFor(symbol: string): BaseDataAdapter {
@@ -91,7 +93,15 @@ export class SymbolManager {
       );
     }
     if (isVnEquitySymbol(symbol)) {
-      return this.adapters.get('tcbs')!;
+      // VN30 futures (VN30F1M etc) aren't on Yahoo — clear error so the user
+      // knows to use DNSE/SSI for those (not yet wired).
+      if (/^VN30F\d/.test(symbol.toUpperCase())) {
+        throw new Error(
+          `${symbol} (VN30 futures) isn't available via the free Yahoo feed. ` +
+            `For real-time VN futures + orders, wire DNSE LightSpeed (deferred).`,
+        );
+      }
+      return this.adapters.get('yahoo-vn')!;
     }
     return this.adapters.get('binance')!;
   }
