@@ -10,3 +10,6 @@ data/
 *.db
 *.db-shm
 *.db-wal
+
+# claude-mem auto-generated memory stamps (not source code)
+**/CLAUDE.md

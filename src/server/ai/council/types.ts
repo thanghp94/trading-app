@@ -1,0 +1,77 @@
+import type { Candle, Timeframe } from '../../../shared/types.js';
+import type { Zone } from '../../../shared/types.js';
+import type { WaveCount } from '../../../shared/indicators/wave-counter.js';
+import type { MtfCheck } from '../../../shared/indicators/mtf.js';
+
+export type Stage =
+  | 'analyst-technical'
+  | 'analyst-fundamental'
+  | 'analyst-news'
+  | 'analyst-sentiment'
+  | 'bull'
+  | 'bear'
+  | 'research-manager'
+  | 'trader'
+  | 'risk-aggressive'
+  | 'risk-neutral'
+  | 'risk-conservative'
+  | 'portfolio-manager';
+
+export interface CouncilContext {
+  symbol: string;
+  timeframe: Timeframe;
+  lastCandleTime: number;
+  recentCandles: Candle[];
+  zones: Zone[];
+  waves: WaveCount[];
+  mtf: MtfCheck | null;
+}
+
+export interface AnalystOutput {
+  stage: Stage;
+  text: string;
+  dataAvailable: boolean;
+}
+
+export interface DebateRound {
+  bull: string;
+  bear: string;
+}
+
+export interface RiskVerdict {
+  persona: 'aggressive' | 'neutral' | 'conservative';
+  text: string;
+}
+
+export interface PMDecision {
+  action: 'increase' | 'hold' | 'decrease';
+  confidence: 'low' | 'med' | 'high';
+  sizePct: number;
+  tp: number;
+  sl: number;
+  rationale: string;
+}
+
+export interface CostLedger {
+  entries: Array<{
+    stage: Stage;
+    model: string;
+    inTok: number;
+    outTok: number;
+    costUsd: number;
+  }>;
+  totalUsd: number;
+}
+
+export interface CouncilReport {
+  symbol: string;
+  timeframe: Timeframe;
+  cachedAt: number;
+  analysts: AnalystOutput[];
+  debate: DebateRound;
+  manager: string;
+  trader: string;
+  risk: RiskVerdict[];
+  pm: PMDecision;
+  cost: CostLedger;
+}

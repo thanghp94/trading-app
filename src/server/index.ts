@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
 import fastifyStatic from '@fastify/static';
-import type { Alert, ClientMessage, ServerMessage } from '../shared/types.js';
+import type { Alert, ClientMessage, ServerMessage, Timeframe } from '../shared/types.js';
 import { SymbolManager } from './symbol-manager.js';
 import { AlertEngine } from './alerts/alert-engine.js';
 import { analyzeChart } from './ai/analyze.js';
@@ -15,6 +15,7 @@ import { rankWatchlist } from './scanner/watchlist-scanner.js';
 import { checkMtf } from '../shared/indicators/mtf.js';
 import { SubscriberStore } from './public-feed/subscribers.js';
 import { AutoExecutor } from './execution/auto-executor.js';
+import { runCouncil } from './ai/council/orchestrator.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 3001);
@@ -141,6 +142,18 @@ fastify.get('/api/alerts', async () => alertEngine.getHistory());
 fastify.post('/api/analyze', async (req) => {
   return analyzeChart(req.body as Parameters<typeof analyzeChart>[0]);
 });
+
+// AI Trading Council — multi-agent pipeline (Haiku × 11 + Sonnet × 1, ~$0.03-0.05/call).
+// Gate: disabled unless COUNCIL_ENABLED=true in env. Returns 404 when off.
+if (process.env.COUNCIL_ENABLED === 'true') {
+  fastify.post('/api/council', async (req) => {
+    const { symbol, timeframe } = req.body as { symbol: string; timeframe: Timeframe };
+    if (typeof symbol !== 'string' || !symbol) return { ok: false, error: 'symbol required' };
+    const allowed = ['1m', '5m', '15m', '1h', '4h', '1d'];
+    if (!allowed.includes(timeframe)) return { ok: false, error: `timeframe must be one of ${allowed.join(',')}` };
+    return runCouncil({ symbol, timeframe, alertEngine });
+  });
+}
 
 // Journal — list, get, update, stats, csv.
 fastify.get('/api/journal', async () => ({ trades: journal.list(), stats: journal.stats() }));
