@@ -128,7 +128,7 @@ const PM_TOOL_SCHEMA = {
   type: 'object' as const,
   required: ['action', 'confidence', 'sizePct', 'tp', 'sl', 'rationale'],
   properties: {
-    action: { type: 'string', enum: ['increase', 'hold', 'decrease'] },
+    action: { type: 'string', enum: ['increase', 'hold', 'decrease', 'no_trade'] },
     confidence: { type: 'string', enum: ['low', 'med', 'high'] },
     sizePct: { type: 'number', description: 'Position size as % of portfolio (0-100)' },
     tp: { type: 'number', description: 'Take-profit price' },

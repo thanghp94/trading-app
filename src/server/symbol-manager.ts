@@ -3,6 +3,7 @@ import { BinanceAdapter } from './adapters/binance-adapter.js';
 import { OandaAdapter } from './adapters/oanda-adapter.js';
 import { YahooVnAdapter } from './adapters/yahoo-vn-adapter.js';
 import { TwelveDataAdapter } from './adapters/twelvedata-adapter.js';
+import { DnseAdapter } from './adapters/dnse-adapter.js';
 import type { BaseDataAdapter } from './adapters/base-data-adapter.js';
 
 interface SubKey {
@@ -74,11 +75,17 @@ export class SymbolManager {
     }
     // Yahoo Finance for VN stocks — free, no auth, .VN suffix.
     // Replaced TCBS (apipubaws.tcbs.com.vn endpoints now 404).
-    // Note: Yahoo doesn't cover VN30 futures — those need DNSE.
     const yahooVn = new YahooVnAdapter();
     yahooVn.on('candle', (c) => this.onCandle(c));
     yahooVn.on('error', (err) => this.onError(err));
     this.adapters.set('yahoo-vn', yahooVn);
+
+    if (process.env.DNSE_API_KEY && process.env.DNSE_API_SECRET) {
+      const dnse = new DnseAdapter(process.env.DNSE_API_KEY, process.env.DNSE_API_SECRET);
+      dnse.on('candle', (c) => this.onCandle(c));
+      dnse.on('error', (err) => this.onError(err));
+      this.adapters.set('dnse', dnse);
+    }
   }
 
   private adapterFor(symbol: string): BaseDataAdapter {
@@ -93,15 +100,16 @@ export class SymbolManager {
       );
     }
     if (isVnEquitySymbol(symbol)) {
-      // VN30 futures (VN30F1M etc) aren't on Yahoo — clear error so the user
-      // knows to use DNSE/SSI for those (not yet wired).
-      if (/^VN30F\d/.test(symbol.toUpperCase())) {
+      if (/^VN30F\d/i.test(symbol)) {
+        const dnse = this.adapters.get('dnse');
+        if (dnse) return dnse;
         throw new Error(
-          `${symbol} (VN30 futures) isn't available via the free Yahoo feed. ` +
-            `For real-time VN futures + orders, wire DNSE LightSpeed (deferred).`,
+          `${symbol} (VN30 futures) requires DNSE LightSpeed. ` +
+            `Set DNSE_API_KEY and DNSE_API_SECRET in .env and restart.`,
         );
       }
-      return this.adapters.get('yahoo-vn')!;
+      // Prefer DNSE for stocks when available (lower latency, authenticated)
+      return this.adapters.get('dnse') ?? this.adapters.get('yahoo-vn')!;
     }
     return this.adapters.get('binance')!;
   }

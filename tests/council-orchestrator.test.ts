@@ -15,6 +15,13 @@ vi.mock('@anthropic-ai/sdk', () => {
   };
 });
 
+// ─── DecisionLog mock ─────────────────────────────────────────────────────────
+// Prevents real SQLite writes during unit tests
+const mockLogAppend = vi.fn();
+vi.mock('../src/server/ai/council/decision-log.js', () => ({
+  decisionLog: { append: mockLogAppend },
+}));
+
 // Import AFTER vi.mock is hoisted
 const { runCouncil, clearCouncilCache } = await import('../src/server/ai/council/orchestrator.js');
 
@@ -28,17 +35,17 @@ function textResponse(text: string, usage = HAIKU_USAGE) {
   return { content: [{ type: 'text', text }], usage };
 }
 
-/** Tool-use response (PM stage) */
-function toolResponse() {
+/** Tool-use response (PM stage) — action:increase + sizePct:5 bypasses all hard gates by default */
+function toolResponse(overrides: Partial<{ action: string; confidence: string; sizePct: number }> = {}) {
   return {
     content: [
       {
         type: 'tool_use',
         name: 'submit_decision',
         input: {
-          action: 'hold',
-          confidence: 'med',
-          sizePct: 50,
+          action: overrides.action ?? 'increase',
+          confidence: overrides.confidence ?? 'med',
+          sizePct: overrides.sizePct ?? 5,
           tp: 110,
           sl: 90,
           rationale: 'Balanced risk/reward given current conditions.',
@@ -84,9 +91,11 @@ describe('runCouncil orchestrator', () => {
   beforeEach(() => {
     clearCouncilCache();
     vi.clearAllMocks();
+    mockLogAppend.mockReset();
     // The mock replaces the Anthropic class, but getCouncilClient() still guards
     // on ANTHROPIC_API_KEY. Set a fake key so the guard passes.
     process.env.ANTHROPIC_API_KEY = 'test-key-fake';
+    delete process.env.COUNCIL_MAX_POSITION_PCT;
   });
 
   it('returns ok:true with a fully-shaped CouncilReport', async () => {
@@ -102,7 +111,8 @@ describe('runCouncil orchestrator', () => {
     expect(typeof r.manager).toBe('string');
     expect(typeof r.trader).toBe('string');
     expect(r.risk).toHaveLength(3);
-    expect(r.pm).toMatchObject({ action: 'hold', confidence: 'med' });
+    expect(r.pm).toMatchObject({ action: 'increase', confidence: 'med', sizePct: 5 });
+    expect(r.gated).toBe(false);
     expect(result.cached).toBe(false);
   });
 
@@ -182,7 +192,7 @@ describe('runCouncil orchestrator', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const { pm } = result.report;
-    expect(['increase', 'hold', 'decrease']).toContain(pm.action);
+    expect(['increase', 'hold', 'decrease', 'no_trade']).toContain(pm.action);
     expect(['low', 'med', 'high']).toContain(pm.confidence);
     expect(typeof pm.sizePct).toBe('number');
     expect(typeof pm.tp).toBe('number');
@@ -207,5 +217,76 @@ describe('runCouncil orchestrator', () => {
     const emptyEngine = { snapshots: () => [] } as unknown as AlertEngine;
     const result = await runCouncil({ symbol: 'BTCUSDT', timeframe: '5m', alertEngine: emptyEngine });
     expect(result.ok).toBe(false);
+  });
+
+  it('decision log is called once per successful run', async () => {
+    setupMockResponses();
+    await runCouncil({ symbol: 'BTCUSDT', timeframe: '5m', alertEngine: fakeEngine() });
+    expect(mockLogAppend).toHaveBeenCalledTimes(1);
+  });
+
+  it('decision log is NOT called on error (missing snapshot)', async () => {
+    const emptyEngine = { snapshots: () => [] } as unknown as AlertEngine;
+    await runCouncil({ symbol: 'BTCUSDT', timeframe: '5m', alertEngine: emptyEngine });
+    expect(mockLogAppend).not.toHaveBeenCalled();
+  });
+
+  describe('hard gates', () => {
+    function setupWithPM(pmOverrides: Partial<{ action: string; confidence: string; sizePct: number }>) {
+      let callIdx = 0;
+      mockCreate.mockImplementation(() => {
+        const idx = callIdx++;
+        if (idx === 11) return Promise.resolve(toolResponse(pmOverrides));
+        return Promise.resolve(textResponse(`stage ${idx}`));
+      });
+    }
+
+    it('low confidence forces no_trade and sizePct=0, sets gated=true', async () => {
+      setupWithPM({ action: 'increase', confidence: 'low', sizePct: 5 });
+      const result = await runCouncil({ symbol: 'BTCUSDT', timeframe: '5m', alertEngine: fakeEngine() });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.report.pm.action).toBe('no_trade');
+      expect(result.report.pm.sizePct).toBe(0);
+      expect(result.report.gated).toBe(true);
+    });
+
+    it('PM no_trade is preserved when PM chooses it directly, gated=false', async () => {
+      setupWithPM({ action: 'no_trade', confidence: 'high', sizePct: 0 });
+      const result = await runCouncil({ symbol: 'BTCUSDT', timeframe: '5m', alertEngine: fakeEngine() });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.report.pm.action).toBe('no_trade');
+      expect(result.report.pm.sizePct).toBe(0);
+      expect(result.report.gated).toBe(false);
+    });
+
+    it('sizePct above cap is clamped, gated=true', async () => {
+      setupWithPM({ action: 'increase', confidence: 'high', sizePct: 50 });
+      const result = await runCouncil({ symbol: 'BTCUSDT', timeframe: '5m', alertEngine: fakeEngine() });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.report.pm.sizePct).toBe(10); // default cap
+      expect(result.report.gated).toBe(true);
+    });
+
+    it('hold action forces sizePct=0 regardless of PM value, gated=true', async () => {
+      setupWithPM({ action: 'hold', confidence: 'high', sizePct: 8 });
+      const result = await runCouncil({ symbol: 'BTCUSDT', timeframe: '5m', alertEngine: fakeEngine() });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.report.pm.action).toBe('hold');
+      expect(result.report.pm.sizePct).toBe(0);
+      expect(result.report.gated).toBe(true);
+    });
+
+    it('decision log receives raw PM action before gate override', async () => {
+      setupWithPM({ action: 'increase', confidence: 'low', sizePct: 5 });
+      await runCouncil({ symbol: 'BTCUSDT', timeframe: '5m', alertEngine: fakeEngine() });
+      expect(mockLogAppend).toHaveBeenCalledTimes(1);
+      const [report, rawAction] = mockLogAppend.mock.calls[0];
+      expect(rawAction).toBe('increase'); // raw PM choice before gate
+      expect(report.pm.action).toBe('no_trade'); // gated final
+    });
   });
 });

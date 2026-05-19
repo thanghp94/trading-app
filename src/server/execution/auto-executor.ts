@@ -103,12 +103,33 @@ export class AutoExecutor {
     if (this.config.mode === 'off') return null;
     if (!this.allowedFor(alert)) return null;
 
+    const isDerivative = /^VN30F/i.test(alert.symbol);
     const side: 'buy' | 'sell' = alert.direction === 'bull' ? 'buy' : 'sell';
-    const slDist = alert.price * this.config.slPct;
+
+    // Chứng khoán cơ sở VN (không phải phái sinh) chỉ được mua (Long)
+    if (!isDerivative && side === 'sell') {
+      // eslint-disable-next-line no-console
+      console.log(`[exec] Skipped: Short selling not supported for VN stock ${alert.symbol}`);
+      return null;
+    }
+
+    const slDist = Math.abs(alert.price * this.config.slPct);
     const sl = side === 'buy' ? alert.price - slDist : alert.price + slDist;
     const tp = side === 'buy' ? alert.price + slDist * this.config.rrTarget : alert.price - slDist * this.config.rrTarget;
     const riskAmount = this.config.balance * (this.config.riskPct / 100);
-    const quantity = riskAmount / slDist;
+
+    // Tính số lượng và làm tròn xuống lô 100 cho cổ phiếu VN
+    let quantity = riskAmount / slDist;
+    if (!isDerivative) {
+      quantity = Math.floor(quantity / 100) * 100;
+      if (quantity < 100) {
+        // eslint-disable-next-line no-console
+        console.log(`[exec] Skipped: Quantity ${quantity.toFixed(0)} is less than 1 lot (100)`);
+        return null;
+      }
+    } else {
+      quantity = Math.floor(quantity); // Phái sinh VN30F tính theo hợp đồng (lô 1)
+    }
 
     const draft: Omit<PlacedOrder, 'status' | 'reason' | 'brokerOrderId'> & { status?: PlacedOrder['status'] } = {
       alertId: alert.id,
@@ -145,7 +166,7 @@ export class AutoExecutor {
     }
   }
 
-  private allowedFor(alert: Alert): boolean {
+  public allowedFor(alert: Alert): boolean {
     return this.config.allow.some(
       (a) => (a.rule === '*' || a.rule === alert.rule) && (a.symbol === '*' || a.symbol === alert.symbol),
     );

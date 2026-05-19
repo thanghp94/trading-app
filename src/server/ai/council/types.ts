@@ -44,7 +44,7 @@ export interface RiskVerdict {
 }
 
 export interface PMDecision {
-  action: 'increase' | 'hold' | 'decrease';
+  action: 'increase' | 'hold' | 'decrease' | 'no_trade';
   confidence: 'low' | 'med' | 'high';
   sizePct: number;
   tp: number;
@@ -73,5 +73,7 @@ export interface CouncilReport {
   trader: string;
   risk: RiskVerdict[];
   pm: PMDecision;
+  /** True when a hard gate overrode the PM's raw decision (e.g. low confidence forced no_trade). */
+  gated: boolean;
   cost: CostLedger;
 }

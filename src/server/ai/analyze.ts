@@ -48,11 +48,11 @@ export async function analyzeChart(req: AnalyzeRequest): Promise<AnalyzeResponse
   const activeWave = req.waves.find((w) => w.active);
 
   const systemPrompt =
-    `You are an experienced technical analyst reading a single chart. Be terse, concrete, ` +
-    `and actionable. No disclaimers about not being a financial advisor — the user is a personal ` +
-    `trader who already knows that. 4–6 short sentences max. Reference exact prices and zone bounds. ` +
-    `If the user's specific setup (strong impulse + 0-1-2-3-4-5 waves entered on the 2→3 and 4→5 legs) ` +
-    `is forming or invalidated, say so directly.`;
+    `You are an experienced technical analyst reading a single chart. The user is currently holding this stock and is TRAPPED IN A LOSING POSITION. ` +
+    `Your goal is to provide a concrete "Rescue/Exit Strategy". Be terse, concrete, ` +
+    `and actionable. No disclaimers about not being a financial advisor. 4–6 short sentences max. ` +
+    `Reference exact prices and zone bounds. Answer specifically: Where is the hard stop-loss to cut the bleeding? ` +
+    `Where is the closest resistance to sell/reduce position on a technical bounce?`;
 
   const userPrompt =
     `Symbol: ${req.symbol} ${req.timeframe}\n` +

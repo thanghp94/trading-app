@@ -5,6 +5,7 @@ import { AlertPanel } from './components/AlertPanel.js';
 import { JournalPanel } from './components/JournalPanel.js';
 import { PositionSizer } from './components/PositionSizer.js';
 import { WatchlistPanel } from './components/WatchlistPanel.js';
+import { VnBacktestPanel } from './components/VnBacktestPanel.js';
 import { HelpOverlay } from './components/HelpOverlay.js';
 import { SymbolSearch } from './components/SymbolSearch.js';
 import { MarketSessions } from './components/MarketSessions.js';
@@ -123,6 +124,7 @@ export function App() {
       </div>
       <PositionSizer />
       <WatchlistPanel onPick={onWatchlistPick} />
+      <VnBacktestPanel />
       <AlertPanel alerts={alerts} onClear={clearAlerts} />
       <JournalPanel />
       <HelpOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />

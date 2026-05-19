@@ -16,12 +16,20 @@ import { checkMtf } from '../shared/indicators/mtf.js';
 import { SubscriberStore } from './public-feed/subscribers.js';
 import { AutoExecutor } from './execution/auto-executor.js';
 import { runCouncil } from './ai/council/orchestrator.js';
+import cron from 'node-cron';
+import { runDailyReport } from '../../scripts/daily-report-service.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 3001);
 const AUTH_TOKEN = process.env.APP_AUTH_TOKEN ?? '';
 
 const fastify = Fastify({ logger: true });
+
+// Lập lịch báo cáo hàng ngày (15:15 Thứ 2 - Thứ 6)
+cron.schedule('15 15 * * 1-5', () => {
+  fastify.log.info('[cron] Bắt đầu chạy báo cáo Daily Summary...');
+  runDailyReport().catch(err => fastify.log.error(err, '[cron] Lỗi chạy báo cáo'));
+});
 
 await fastify.register(websocket);
 
@@ -39,6 +47,47 @@ const autoExecutor = new AutoExecutor();
 const riskGuards = new RiskGuards(journal);
 fastify.log.info(`[exec] auto-execute mode: ${autoExecutor.getMode()}`);
 
+let telegramBot: any = null;
+if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+  const { TelegramBot } = await import('./alerts/telegram-bot.js');
+  telegramBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, process.env.TELEGRAM_CHAT_ID);
+  
+  // Khởi động lắng nghe nút bấm Telegram
+  telegramBot.startPolling(async (action: string, alertId: string, messageId: number) => {
+    if (action === 'ignore') {
+      await telegramBot.editMessage(messageId, `❌ *ĐÃ BỎ QUA*\n_Bạn đã hủy lệnh này_`);
+      fastify.log.info('[Telegram] User ignored alert');
+      return;
+    }
+    
+    if (action === 'exec') {
+      // Tìm lại alert trong history
+      const history = alertEngine.getHistory();
+      const alert = history.find(a => a.id === alertId);
+      if (!alert) {
+        await telegramBot.editMessage(messageId, `⚠️ *LỖI*\n_Không tìm thấy tín hiệu (có thể server vừa khởi động lại)_`);
+        return;
+      }
+
+      await telegramBot.editMessage(messageId, `⏳ *ĐANG XỬ LÝ LỆNH MUA...*\n_Mã: ${alert.symbol}_`);
+      
+      try {
+        const order = await autoExecutor.maybeExecute(alert);
+        if (order && order.status === 'placed') {
+          const modeTxt = autoExecutor.getMode() === 'dry-run' ? '[DRY-RUN/GIẢ LẬP]' : '[LIVE]';
+          await telegramBot.editMessage(messageId, `✅ *ĐẶT LỆNH THÀNH CÔNG ${modeTxt}*\n\nMã: *${order.symbol}*\nSL: ${order.quantity}\nCắt lỗ (SL): ${order.sl.toLocaleString('vi-VN')}\nChốt lời (TP): ${order.tp.toLocaleString('vi-VN')}`);
+        } else if (order) {
+          await telegramBot.editMessage(messageId, `❌ *ĐẶT LỆNH THẤT BẠI*\n\nMã: ${order.symbol}\nLý do: ${order.reason || 'Bị từ chối'}`);
+        } else {
+          await telegramBot.editMessage(messageId, `❌ *LỆNH BỊ BỎ QUA*\n\nLý do: Không thỏa mãn khối lượng tối thiểu hoặc cấu hình rủi ro.`);
+        }
+      } catch (err: any) {
+        await telegramBot.editMessage(messageId, `⚠️ *LỖI HỆ THỐNG*\n_${err.message}_`);
+      }
+    }
+  });
+}
+
 const ANALYZE_ON_ALERT = process.env.ANALYZE_ON_ALERT === 'true';
 
 const broadcastAlert = (alert: Alert) => {
@@ -52,9 +101,7 @@ const broadcastAlert = (alert: Alert) => {
     return;
   }
 
-  // Annotate alert with MTF context — informational only, no suppression here.
-  // The user decides via the alert panel / journal whether to act on
-  // mismatched alerts. Backtest applies hard gating; live mode just tags.
+  // Annotate alert with MTF context...
   try {
     const stream = alertEngine.snapshots().find((s) => s.symbol === alert.symbol && s.timeframe === alert.timeframe);
     if (stream) {
@@ -72,14 +119,34 @@ const broadcastAlert = (alert: Alert) => {
 
   const msg: ServerMessage = { type: 'alert', alert };
   for (const s of sockets) s.send(msg);
+  
   try {
     journal.logFromAlert(alert);
   } catch (err) {
     fastify.log.error({ err }, '[journal] log failed');
   }
-  void autoExecutor.maybeExecute(alert).catch((err) => {
-    fastify.log.error({ err }, '[exec] maybeExecute failed');
-  });
+
+  // Gửi Telegram kèm nút bấm nếu thỏa mãn cấu hình Auto-Execute
+  if (telegramBot) {
+    const isAllowed = autoExecutor.allowedFor?.(alert) ?? true;
+    if (isAllowed) {
+      const isDerivative = /^VN30F/i.test(alert.symbol);
+      const side = alert.direction === 'bull' ? 'Mua' : 'Bán';
+      
+      // Chỉ hiện nút Mua cho cổ phiếu VN (trừ phái sinh mới có nút Bán)
+      if (isDerivative || alert.direction === 'bull') {
+        const buttons = {
+          inline_keyboard: [[
+            { text: `🚀 Duyệt ${side} ${alert.symbol}`, callback_data: `exec:${alert.id}` },
+            { text: '❌ Bỏ qua', callback_data: 'ignore' }
+          ]]
+        };
+        telegramBot.send(alert, buttons).catch((err: any) => fastify.log.error(err, '[Telegram] send failed'));
+      } else {
+        telegramBot.send(alert).catch((err: any) => fastify.log.error(err, '[Telegram] send failed'));
+      }
+    }
+  }
 
   // Async AI auto-analyze: fetch the evaluator's recent state and ask Claude
   // for a 5-sentence read. Result is broadcast as an alert-update so any
@@ -184,6 +251,68 @@ fastify.get('/api/journal/csv', async (_req, reply) => {
 
 // Backtest — replay rules + simulate trades against any candle history.
 fastify.post('/api/backtest', async (req) => runBacktest(req.body as BacktestRequest));
+
+// VN backtest — server-side DNSE data fetch + backtest. No candles in body needed.
+fastify.post('/api/backtest/vn', async (req, reply) => {
+  if (!process.env.DNSE_API_KEY || !process.env.DNSE_API_SECRET) {
+    reply.status(400);
+    return { error: 'DNSE_API_KEY and DNSE_API_SECRET not configured in .env' };
+  }
+  const { DnseAdapter } = await import('./adapters/dnse-adapter.js');
+  const body = req.body as {
+    symbol: string;
+    timeframe: Timeframe;
+    fromDate?: string; // YYYY-MM-DD
+    toDate?: string;
+    slMode?: string;
+    slPct?: number;
+    tpMode?: string;
+    rrTarget?: number;
+    maxBars?: number;
+    riskPct?: number;
+    startingBalance?: number;
+    preferredOnly?: boolean;
+    mtfTrendAlign?: boolean;
+    mtfZoneConfluence?: boolean;
+  };
+  const toSec = body.toDate ? Math.floor(new Date(body.toDate).getTime() / 1000) + 86400 : Math.floor(Date.now() / 1000);
+  const fromSec = body.fromDate
+    ? Math.floor(new Date(body.fromDate).getTime() / 1000)
+    : toSec - 365 * 86400;
+
+  const adapter = new DnseAdapter(process.env.DNSE_API_KEY, process.env.DNSE_API_SECRET);
+  try {
+    const candles = await adapter.fetchHistorical({
+      symbol: body.symbol,
+      timeframe: body.timeframe,
+      limit: 50_000,
+      sinceSec: fromSec,
+    });
+    // Trim to requested window
+    const filtered = candles.filter((c) => c.time >= fromSec && c.time <= toSec);
+    if (filtered.length < 50) {
+      reply.status(400);
+      return { error: `Only ${filtered.length} candles in range — too few to backtest.` };
+    }
+    return runBacktest({
+      symbol: body.symbol,
+      timeframe: body.timeframe,
+      candles: filtered,
+      slMode: (body.slMode ?? 'trigger-wick') as BacktestRequest['slMode'],
+      slPct: body.slPct ?? 0.005,
+      tpMode: (body.tpMode ?? 'next-resistance') as BacktestRequest['tpMode'],
+      rrTarget: body.rrTarget ?? 2,
+      maxBars: body.maxBars ?? 30,
+      riskPct: body.riskPct ?? 1,
+      startingBalance: body.startingBalance ?? 10_000,
+      preferredOnly: body.preferredOnly ?? false,
+      mtfTrendAlign: body.mtfTrendAlign ?? false,
+      mtfZoneConfluence: body.mtfZoneConfluence ?? false,
+    });
+  } finally {
+    await adapter.close();
+  }
+});
 
 // Watchlist scanner — score every active stream, return top setups.
 fastify.get('/api/scan', async () => {

@@ -3,12 +3,44 @@ import type { AlertEngine } from '../../alerts/alert-engine.js';
 import type { CouncilReport, CostLedger, AnalystOutput, RiskVerdict, PMDecision } from './types.js';
 import { buildContext } from './context-builder.js';
 import { runPrompt } from './anthropic-runner.js';
+import { decisionLog } from './decision-log.js';
 import {
   analystTechnical, analystFundamental, analystNews, analystSentiment,
   bull, bear, researchManager, trader,
   riskAggressive, riskNeutral, riskConservative, portfolioManager,
   PM_TOOL_NAME, HAIKU_MODEL as HAIKU_MODEL_REF,
 } from './agents.js';
+
+const MAX_POSITION_PCT = (() => {
+  const v = Number(process.env.COUNCIL_MAX_POSITION_PCT ?? 10);
+  return Number.isFinite(v) && v > 0 ? v : 10;
+})();
+
+function applyHardGates(pm: PMDecision): { pm: PMDecision; gated: boolean } {
+  let gated = false;
+  let { action, sizePct } = pm;
+
+  // Gate 1: low confidence → skip trade entirely
+  if (pm.confidence === 'low' && action !== 'no_trade') {
+    action = 'no_trade';
+    sizePct = 0;
+    gated = true;
+  }
+
+  // Gate 2: no_trade / hold must have zero size
+  if ((action === 'no_trade' || action === 'hold') && sizePct !== 0) {
+    sizePct = 0;
+    gated = true;
+  }
+
+  // Gate 3: clamp position size
+  if (sizePct > MAX_POSITION_PCT) {
+    sizePct = MAX_POSITION_PCT;
+    gated = true;
+  }
+
+  return { pm: { ...pm, action, sizePct }, gated };
+}
 
 // LRU cap: evict oldest entry when map exceeds this
 const CACHE_MAX = 50;
@@ -33,7 +65,7 @@ function isPMDecision(v: unknown): v is PMDecision {
   if (!v || typeof v !== 'object') return false;
   const d = v as Record<string, unknown>;
   return (
-    ['increase', 'hold', 'decrease'].includes(d.action as string) &&
+    ['increase', 'hold', 'decrease', 'no_trade'].includes(d.action as string) &&
     ['low', 'med', 'high'].includes(d.confidence as string) &&
     typeof d.sizePct === 'number' &&
     typeof d.tp === 'number' &&
@@ -120,7 +152,9 @@ export async function runCouncil(req: CouncilRequest): Promise<CouncilResult> {
     if (!isPMDecision(pmResult.toolInput)) {
       return { ok: false, error: `portfolio-manager stage failed: tool ${PM_TOOL_NAME} not invoked or bad shape` };
     }
-    const pm: PMDecision = pmResult.toolInput;
+    const rawPm: PMDecision = pmResult.toolInput;
+    const rawAction = rawPm.action;
+    const { pm, gated } = applyHardGates(rawPm);
 
     const report: CouncilReport = {
       symbol: req.symbol,
@@ -132,8 +166,11 @@ export async function runCouncil(req: CouncilRequest): Promise<CouncilResult> {
       trader: traderResult.text,
       risk: riskVerdicts,
       pm,
+      gated,
       cost: ledger,
     };
+
+    decisionLog.append(report, rawAction);
 
     // Cache with FIFO eviction if over limit
     if (cache.size >= CACHE_MAX) {
