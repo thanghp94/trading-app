@@ -56,6 +56,24 @@ export function scoreFromSignals(s: ScreenerSignals): ScoreResult {
     score += 5;
     reasons.push("new low (watch reversal)");
   }
+  if (s.ichimoku === "good") {
+    score += 12;
+    reasons.push("Ichimoku bullish");
+  } else if (s.ichimoku === "bad") {
+    score -= 12;
+  }
+  if (s.divergence === "bullish") {
+    score += 18;
+    reasons.push("bullish divergence");
+  } else if (s.divergence === "hidden-bullish") {
+    score += 10;
+    reasons.push("hidden bullish divergence");
+  } else if (s.divergence === "bearish") {
+    score -= 18;
+    reasons.push("bearish divergence");
+  } else if (s.divergence === "hidden-bearish") {
+    score -= 10;
+  }
 
   const star =
     score >= 70 ? 5 : score >= 50 ? 4 : score >= 30 ? 3 : score >= 15 ? 2 : 1;

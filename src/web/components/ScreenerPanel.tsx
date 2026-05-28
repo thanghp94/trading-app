@@ -33,6 +33,18 @@ const CHIPS: {
     label: "RSI oversold",
     test: (r) => r.signals.rsiZone === "oversold",
   },
+  {
+    id: "ichi",
+    label: "Ichimoku tốt",
+    test: (r) => r.signals.ichimoku === "good",
+  },
+  {
+    id: "pk",
+    label: "Phân kỳ dương",
+    test: (r) =>
+      r.signals.divergence === "bullish" ||
+      r.signals.divergence === "hidden-bullish",
+  },
 ];
 
 const stars = (n: number) => "★".repeat(n) + "☆".repeat(5 - n);
@@ -225,6 +237,12 @@ function taBadges(r: ScreenerRow): string {
   if (s.rsiZone === "overbought") b.push("quá mua");
   if (s.newHigh) b.push("New High");
   if (s.newLow) b.push("New Low");
+  if (s.ichimoku === "good") b.push("Ichi✓");
+  if (s.ichimoku === "bad") b.push("Ichi✗");
+  if (s.divergence === "bullish") b.push("Phân kỳ+");
+  if (s.divergence === "hidden-bullish") b.push("PK ẩn+");
+  if (s.divergence === "bearish") b.push("Phân kỳ−");
+  if (s.divergence === "hidden-bearish") b.push("PK ẩn−");
   return b.join(" · ") || "—";
 }
 

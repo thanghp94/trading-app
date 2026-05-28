@@ -5,6 +5,8 @@ import { rsi } from "../../shared/indicators/rsi.js";
 import { computeZones } from "../../shared/indicators/sr-zone-tracker.js";
 import { detectPatterns } from "../../shared/indicators/pattern-detector.js";
 import { volumeSma } from "../../shared/indicators/impulse-detector.js";
+import { ichimokuSignal } from "../../shared/indicators/ichimoku.js";
+import { detectDivergence } from "../../shared/indicators/divergence.js";
 
 const TREND_EMA = 50;
 const HILO_LOOKBACK = 50;
@@ -83,5 +85,7 @@ export function computeTaSignals(candles: Candle[]): ScreenerSignals {
     zoneTouch,
     newHigh,
     newLow,
+    ichimoku: ichimokuSignal(candles),
+    divergence: detectDivergence(candles),
   };
 }

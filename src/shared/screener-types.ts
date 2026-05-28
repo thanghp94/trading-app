@@ -1,4 +1,6 @@
 import type { BBStatus, XHCau } from "./blackbox/types.js";
+import type { IchimokuSignal } from "./indicators/ichimoku.js";
+import type { Divergence } from "./indicators/divergence.js";
 
 /** TA signals for a screener row (the QMV "Tín hiệu kỹ thuật" + price columns). */
 export interface ScreenerSignals {
@@ -14,6 +16,10 @@ export interface ScreenerSignals {
   zoneTouch: "support" | "resistance" | null;
   newHigh: boolean;
   newLow: boolean;
+  /** Ichimoku tốt/xấu — bullish/bearish cloud structure. */
+  ichimoku: IchimokuSignal;
+  /** Phân kỳ — RSI divergence (regular + hidden). */
+  divergence: Divergence;
 }
 
 /**
