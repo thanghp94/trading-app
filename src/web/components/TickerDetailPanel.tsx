@@ -6,13 +6,15 @@ import { TickerCumVolume } from "./TickerCumVolume.js";
 import { TickerVolumeProfile } from "./TickerVolumeProfile.js";
 import { TickerFundamentals } from "./TickerFundamentals.js";
 import { TickerOwnership } from "./TickerOwnership.js";
+import { TickerCorpActions } from "./TickerCorpActions.js";
 
-type Tab = "intraday" | "valuation" | "ownership";
+type Tab = "intraday" | "valuation" | "ownership" | "events";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "intraday", label: "Phiên" },
   { id: "valuation", label: "Cơ bản" },
   { id: "ownership", label: "Sở hữu" },
+  { id: "events", label: "Sự kiện" },
 ];
 
 export interface IntradayCandle {
@@ -121,6 +123,8 @@ export function TickerDetailPanel({ symbol, open, onClose }: Props) {
         <TickerFundamentals symbol={symbol} />
       ) : tab === "ownership" && symbol ? (
         <TickerOwnership symbol={symbol} />
+      ) : tab === "events" && symbol ? (
+        <TickerCorpActions symbol={symbol} />
       ) : (
         <div
           style={{

@@ -30,6 +30,7 @@ COPY --from=build /app/dist ./dist
 # The python CLI scripts are read at runtime (not bundled by tsc/vite).
 COPY scripts/vnstock-fundamentals.py ./scripts/vnstock-fundamentals.py
 COPY scripts/vnstock-ownership.py ./scripts/vnstock-ownership.py
+COPY scripts/vnstock-corp-actions.py ./scripts/vnstock-corp-actions.py
 
 # Persist SQLite + any future state under /data so a docker volume mount
 # survives image rebuilds.

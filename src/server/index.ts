@@ -41,9 +41,11 @@ import { rankWatchlist } from "./scanner/watchlist-scanner.js";
 import { WatchlistStore } from "./scanner/watchlist-store.js";
 import { FundamentalsStore } from "./fundamentals/fundamentals-store.js";
 import { OwnershipStore } from "./fundamentals/ownership-store.js";
+import { CorpActionStore } from "./fundamentals/corp-action-store.js";
 import { refreshSymbols } from "./fundamentals/refresh.js";
 import { fetchFundamentals } from "./fundamentals/vnstock-client.js";
 import { fetchOwnership } from "./fundamentals/ownership-client.js";
+import { fetchCorpActions } from "./fundamentals/corp-action-client.js";
 import { registerSymbolCacheRoute } from "./fundamentals/route.js";
 import { runScreener } from "./screener/run.js";
 import { getUniverse } from "./scanner/universe.js";
@@ -90,6 +92,7 @@ const subscribers = new SubscriberStore();
 const watchlistStore = new WatchlistStore();
 const fundamentalsStore = new FundamentalsStore();
 const ownershipStore = new OwnershipStore();
+const corpActionStore = new CorpActionStore();
 const autoExecutor = new AutoExecutor();
 const riskGuards = new RiskGuards(journal);
 
@@ -120,6 +123,13 @@ cron.schedule("30 16 * * 1-5", () => {
     label: "ownership",
   }).catch((err: unknown) =>
     fastify.log.error(err, "[cron] Lỗi refresh ownership"),
+  );
+  refreshSymbols(symbols, corpActionStore, {
+    fetcher: fetchCorpActions,
+    logger: cronLogger,
+    label: "corp-actions",
+  }).catch((err: unknown) =>
+    fastify.log.error(err, "[cron] Lỗi refresh corp-actions"),
   );
 });
 fastify.log.info(`[exec] auto-execute mode: ${autoExecutor.getMode()}`);
@@ -1158,6 +1168,13 @@ registerSymbolCacheRoute(fastify, {
   ttlSec: FUNDAMENTALS_TTL_SEC,
   fetcher: fetchOwnership,
   label: "ownership",
+});
+registerSymbolCacheRoute(fastify, {
+  path: "/api/corp-actions/:symbol",
+  store: corpActionStore,
+  ttlSec: FUNDAMENTALS_TTL_SEC,
+  fetcher: fetchCorpActions,
+  label: "corp-actions",
 });
 
 // Node ≥15: unhandled rejections are fatal by default. Log and keep running

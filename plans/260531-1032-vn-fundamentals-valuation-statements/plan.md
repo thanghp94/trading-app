@@ -26,8 +26,10 @@ correct upstream sources + absorbs endpoint drift. No standing service (rejected
 - **PHASE 2 (Phase 04, in progress):** ownership — major shareholders + officers +
   ownership structure (foreign/state/free-float %). Insider deals dropped (no free data
   source in vnstock 4.0.4). See `phase-04-ownership.md`.
-- **OUT (future phases):** dividend/corporate-action calendar, fundamental screener,
-  council `analystFundamental` wiring, insider deals (needs paid/alt source).
+- **PHASE 3 (Phase 05, in progress):** dividend / corporate-action calendar from
+  `Company.events()` (DIV/ISS/AGME/AIS/director-deal announcements). See `phase-05-…md`.
+- **OUT (future phases):** fundamental screener, council `analystFundamental` wiring,
+  insider-deal detail table (needs paid/alt source).
 
 ## Prerequisite
 
@@ -54,6 +56,7 @@ commits before this work starts. Tracked separately; not part of these phases.
 | 02 | SQLite Cache + Nightly Refresh | Done | 01 |
 | 03 | REST Route + TickerDetailPanel Tabs | Done | 02 |
 | 04 | Ownership (shareholders + officers + structure) | Done | 03 |
+| 05 | Dividend / corp-action calendar | Done | 04 |
 
 ## Key risks
 
@@ -146,3 +149,18 @@ Implemented ownership milestone. 99/99 tests pass, tsc clean (server + web). Rev
   in-flight dedup (cleanup moved from `pending.finally()` to handler `try/finally`).
 - Nightly cron now refreshes both fundamentals + ownership for the watchlist.
 - Data source unchanged (VCI, vnstock 4.0.4); Docker copies the ownership script too.
+
+### Session 4 — Build Phase 05 Corp-Action Calendar (2026-05-31)
+
+Implemented dividend/corp-action calendar. 113/113 tests pass, tsc clean (server + web). Review: **SHIP**.
+
+- Source: `Company.events()` (VCI) — 50 events: DIV/ISS/AGME/AIS + director-deal announcements
+  (DDIND/DDRP/DDINS). Dates normalized to `YYYY-MM-DD`, sorted desc; `value_per_share` + `exercise_ratio`.
+- New: `vnstock-corp-actions.py`, `corp-action-types.ts`, `corp-action-client.ts` (`CorpActionError`),
+  `corp-action-store.ts`, `TickerCorpActions.tsx`, + "Sự kiện" tab. Route `GET /api/corp-actions/:symbol`.
+- **DRY rule-of-three:** extracted generic `SymbolJsonCache<T>` (table-name param, regex-guarded);
+  `FundamentalsStore`/`OwnershipStore` now thin subclasses. Reviewer diffed SQL byte-for-byte → zero
+  behavior drift; Phase 1/2 store tests green unchanged.
+- Nightly cron + Docker now cover all three domains (fundamentals, ownership, corp-actions).
+- Note: director-deal *announcement events* surface in the calendar; the dedicated insider-deal
+  detail table remains unavailable (unchanged from Phase 4).
