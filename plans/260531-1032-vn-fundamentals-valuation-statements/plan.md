@@ -31,8 +31,9 @@ correct upstream sources + absorbs endpoint drift. No standing service (rejected
 - **PHASE 4 (Phase 06, in progress):** fundamental screener — augment existing `/api/screener` +
   `ScreenerPanel` with P/E/P/B/ROE/mcap columns + filters + composite value score; pre-warm
   tracked-universe fundamentals nightly. See `phase-06-fundamental-screener.md`.
-- **OUT (future phases):** council `analystFundamental` wiring, insider-deal detail table
-  (needs paid/alt source).
+- **PHASE 5 (Phase 07, in progress):** council `analystFundamental` wiring — feed cached
+  fundamentals + ownership into the AI council's fundamental analyst. See `phase-07-…md`.
+- **OUT:** insider-deal detail table (needs paid/alt source).
 
 ## Prerequisite
 
@@ -61,6 +62,7 @@ commits before this work starts. Tracked separately; not part of these phases.
 | 04 | Ownership (shareholders + officers + structure) | Done | 03 |
 | 05 | Dividend / corp-action calendar | Done | 04 |
 | 06 | Fundamental screener (augment existing) | Done | 01 |
+| 07 | Council analystFundamental wiring | Done | 01, 04 |
 
 ## Key risks
 
@@ -183,3 +185,23 @@ Augmented existing screener with fundamentals. 122/122 tests pass, tsc clean (se
 - **Cron change:** fundamentals now pre-warm `tracked ∪ watchlist` (~90); ownership/corp-actions stay
   watchlist. Verified empty-watchlist still pre-warms fundamentals, skips the per-ticker domains.
 - valueScore documented as a value-tilt heuristic (not predictive), footer caveat in UI.
+
+### Session 6 — Build Phase 07 Council Fundamental Wiring (2026-05-31)
+
+Wired cached fundamentals + ownership into the council's `analystFundamental` (was a
+"data unavailable" stub). 126/126 tests pass, root tsc clean. Review: **SHIP** (after fix).
+
+- `CouncilContext` += optional `fundamentals?`/`ownership?`; `buildContext` gained an optional
+  `lookups` arg (cache-only getters, backward-compatible 3-arg callers untouched).
+- `analystFundamental` branches: VN equity with cache → real prompt via `fundamentalSummary`
+  (P/E/P/B/ROE/EPS/mcap/div + latest quarter + top holders + foreign%); crypto/uncached → stub.
+  `dataAvailable` auto-derives (no extra plumbing).
+- `runCouncil` request carries `getFundamentals`/`getOwnership`; index.ts passes the stores.
+- **Review caught a real miss:** new test's `Candle` literal lacked `symbol`/`timeframe`/`closed`
+  → root `tsc --noEmit` (includes tests/) failed, while `tsconfig.server.json` (excludes tests)
+  passed. Fixed the literal. Lesson recorded: always run root typecheck when touching `tests/`.
+
+## Suite complete
+
+All 5 milestones shipped: valuation+statements, ownership, corp-action calendar, fundamental
+screener, council wiring. Only insider-deal detail remains OUT (no free vnstock source).

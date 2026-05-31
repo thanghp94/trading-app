@@ -1,21 +1,23 @@
-import type { Candle, Timeframe } from '../../../shared/types.js';
-import type { Zone } from '../../../shared/types.js';
-import type { WaveCount } from '../../../shared/indicators/wave-counter.js';
-import type { MtfCheck } from '../../../shared/indicators/mtf.js';
+import type { Candle, Timeframe } from "../../../shared/types.js";
+import type { Zone } from "../../../shared/types.js";
+import type { WaveCount } from "../../../shared/indicators/wave-counter.js";
+import type { MtfCheck } from "../../../shared/indicators/mtf.js";
+import type { Fundamentals } from "../../fundamentals/types.js";
+import type { Ownership } from "../../fundamentals/ownership-types.js";
 
 export type Stage =
-  | 'analyst-technical'
-  | 'analyst-fundamental'
-  | 'analyst-news'
-  | 'analyst-sentiment'
-  | 'bull'
-  | 'bear'
-  | 'research-manager'
-  | 'trader'
-  | 'risk-aggressive'
-  | 'risk-neutral'
-  | 'risk-conservative'
-  | 'portfolio-manager';
+  | "analyst-technical"
+  | "analyst-fundamental"
+  | "analyst-news"
+  | "analyst-sentiment"
+  | "bull"
+  | "bear"
+  | "research-manager"
+  | "trader"
+  | "risk-aggressive"
+  | "risk-neutral"
+  | "risk-conservative"
+  | "portfolio-manager";
 
 export interface CouncilContext {
   symbol: string;
@@ -25,6 +27,10 @@ export interface CouncilContext {
   zones: Zone[];
   waves: WaveCount[];
   mtf: MtfCheck | null;
+  /** Cached fundamentals (VN equities only); null for crypto / cache-miss. */
+  fundamentals?: Fundamentals | null;
+  /** Cached ownership (VN equities only); null for crypto / cache-miss. */
+  ownership?: Ownership | null;
 }
 
 export interface AnalystOutput {
@@ -39,13 +45,13 @@ export interface DebateRound {
 }
 
 export interface RiskVerdict {
-  persona: 'aggressive' | 'neutral' | 'conservative';
+  persona: "aggressive" | "neutral" | "conservative";
   text: string;
 }
 
 export interface PMDecision {
-  action: 'increase' | 'hold' | 'decrease' | 'no_trade';
-  confidence: 'low' | 'med' | 'high';
+  action: "increase" | "hold" | "decrease" | "no_trade";
+  confidence: "low" | "med" | "high";
   sizePct: number;
   tp: number;
   sl: number;

@@ -1,9 +1,17 @@
-import type { Timeframe } from '../../../shared/types.js';
-import { computeZones } from '../../../shared/indicators/sr-zone-tracker.js';
-import { computeWaves } from '../../../shared/indicators/wave-counter.js';
-import { checkMtf } from '../../../shared/indicators/mtf.js';
-import type { AlertEngine } from '../../alerts/alert-engine.js';
-import type { CouncilContext } from './types.js';
+import type { Timeframe } from "../../../shared/types.js";
+import { computeZones } from "../../../shared/indicators/sr-zone-tracker.js";
+import { computeWaves } from "../../../shared/indicators/wave-counter.js";
+import { checkMtf } from "../../../shared/indicators/mtf.js";
+import type { AlertEngine } from "../../alerts/alert-engine.js";
+import type { CouncilContext } from "./types.js";
+import type { Fundamentals } from "../../fundamentals/types.js";
+import type { Ownership } from "../../fundamentals/ownership-types.js";
+
+/** Cache-only lookups for fundamentals/ownership (no python spawn on the council path). */
+export interface FundamentalLookups {
+  getFundamentals?: (symbol: string) => Fundamentals | null;
+  getOwnership?: (symbol: string) => Ownership | null;
+}
 
 /**
  * Build a CouncilContext from the AlertEngine's in-memory candle snapshot.
@@ -15,6 +23,7 @@ export function buildContext(
   symbol: string,
   timeframe: Timeframe,
   alertEngine: AlertEngine,
+  lookups: FundamentalLookups = {},
 ): CouncilContext | null {
   const snap = alertEngine
     .snapshots()
@@ -39,7 +48,8 @@ export function buildContext(
       direction: activeWave.direction,
     });
     // Set null when both axes return no-data (not useful in prompts)
-    mtf = result.trend === 'no-data' && result.zone === 'no-data' ? null : result;
+    mtf =
+      result.trend === "no-data" && result.zone === "no-data" ? null : result;
   }
 
   return {
@@ -50,5 +60,8 @@ export function buildContext(
     zones,
     waves,
     mtf,
+    // Cache-only — null for crypto / non-VN / uncached symbols.
+    fundamentals: lookups.getFundamentals?.(symbol) ?? null,
+    ownership: lookups.getOwnership?.(symbol) ?? null,
   };
 }

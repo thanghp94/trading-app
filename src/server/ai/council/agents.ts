@@ -51,12 +51,77 @@ export function analystTechnical(ctx: CouncilContext): PromptSpec {
   };
 }
 
+/** Compact fundamentals + ownership block for the analyst prompt. Omits nulls. */
+export function fundamentalSummary(ctx: CouncilContext): string {
+  const f = ctx.fundamentals;
+  if (!f) return "";
+  const v = f.valuation;
+  const ratio = (n: number | null) => (n == null ? null : n.toFixed(2));
+  const pct = (n: number | null) =>
+    n == null ? null : `${(n * 100).toFixed(1)}%`;
+  const ty = (n: number | null) =>
+    n == null ? null : `${Math.round(n / 1e9).toLocaleString("en-US")} tỷ`;
+
+  const valuation = [
+    ratio(v.pe) && `P/E ${ratio(v.pe)}`,
+    ratio(v.pb) && `P/B ${ratio(v.pb)}`,
+    pct(v.roe) && `ROE ${pct(v.roe)}`,
+    v.eps != null && `EPS ${Math.round(v.eps).toLocaleString("en-US")}`,
+    ty(v.marketCap) && `Vốn hóa ${ty(v.marketCap)}`,
+    pct(v.dividendYield) && `Cổ tức ${pct(v.dividendYield)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const lines = [valuation && `Định giá: ${valuation}`];
+
+  const q = f.statements[0];
+  if (q) {
+    const stmt = [
+      ty(q.revenue) && `Doanh thu ${ty(q.revenue)}`,
+      ty(q.netProfit) && `LNST ${ty(q.netProfit)}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    if (stmt) lines.push(`Quý ${q.period}: ${stmt}`);
+  }
+
+  const o = ctx.ownership;
+  if (o) {
+    const top = o.shareholders
+      .slice(0, 3)
+      .map((s) => `${s.name ?? "?"} ${pct(s.pct) ?? "—"}`)
+      .join(", ");
+    if (top) lines.push(`Cổ đông lớn: ${top}`);
+    const struct = [
+      pct(o.structure.foreignPct) && `NN ${pct(o.structure.foreignPct)}`,
+      pct(o.structure.freeFloatPct) &&
+        `Free-float ${pct(o.structure.freeFloatPct)}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    if (struct) lines.push(`Sở hữu: ${struct}`);
+  }
+
+  return lines.filter(Boolean).join("\n");
+}
+
 export function analystFundamental(ctx: CouncilContext): PromptSpec {
+  const summary = fundamentalSummary(ctx);
+  if (!summary) {
+    // Crypto / non-VN / uncached — no fundamentals feed for this symbol.
+    return {
+      model: HAIKU_MODEL,
+      maxTokens: 300,
+      system: `You are a fundamental analyst. ${STUB_INSTRUCTION} Your notes field MUST include the string "data unavailable" since no real fundamental data is available for this symbol.`,
+      user: `Provide fundamental analysis for ${ctx.symbol}. No fundamental data is available — respond with your notes including "data unavailable".`,
+    };
+  }
   return {
     model: HAIKU_MODEL,
     maxTokens: 300,
-    system: `You are a fundamental analyst. ${STUB_INSTRUCTION} Your notes field MUST include the string "data unavailable" since no real fundamental feed is connected in this phase.`,
-    user: `Provide fundamental analysis for ${ctx.symbol}. No real data feed is connected — respond with your notes including "data unavailable".`,
+    system: `You are a fundamental analyst for VN equities. Be terse, cite the figures, 5-8 sentences. Assess valuation (P/E, P/B vs ROE), profitability, and ownership quality. ${STUB_INSTRUCTION}`,
+    user: `Fundamental analysis for ${ctx.symbol}.\n\n${summary}`,
   };
 }
 

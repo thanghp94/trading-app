@@ -458,7 +458,13 @@ if (process.env.COUNCIL_ENABLED === "true") {
         ok: false,
         error: `timeframe must be one of ${allowed.join(",")}`,
       };
-    return runCouncil({ symbol, timeframe, alertEngine });
+    return runCouncil({
+      symbol,
+      timeframe,
+      alertEngine,
+      getFundamentals: (s) => fundamentalsStore.get(s),
+      getOwnership: (s) => ownershipStore.get(s),
+    });
   });
 }
 
