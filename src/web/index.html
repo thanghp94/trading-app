@@ -4,38 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trading App</title>
-    <style>
-      html, body, #root { height: 100%; margin: 0; font-family: ui-monospace, Menlo, monospace; }
-      html { background: #0d1117; color: #c9d1d9; }
-      html[data-theme="light"] { background: #f6f8fa; color: #1f2328; }
-      html[data-theme="light"] body { background: #f6f8fa; color: #1f2328; }
-      /* Light theme: invert the chart cell background — best-effort, the
-         bulk of inline-style colors stay dark. Switching back to dark is
-         lossless. */
-      html[data-theme="light"] body > #root > div { background: #f6f8fa; }
-      * { box-sizing: border-box; }
-      /* Pulse animation for the "preparing" banner — gentle attention pull
-         without being annoying. */
-      .preparing-pulse { animation: preparing-pulse 1.4s ease-in-out infinite; }
-      @keyframes preparing-pulse {
-        0%, 100% { background: rgba(212, 167, 44, 0.10); }
-        50%      { background: rgba(212, 167, 44, 0.22); }
-      }
-      /* Mobile / narrow viewport: collapse the chart grid to a single column
-         regardless of `cols` setting, and stack floating panels under the grid
-         so they don't cover the only visible chart. */
-      @media (max-width: 720px) {
-        body > #root > div > div[style*="grid-template-columns"] {
-          grid-template-columns: 1fr !important;
-        }
-        body > #root > div > div[style*="position:fixed"],
-        body > #root > div > div[style*="position: fixed"] {
-          left: 8px !important;
-          right: 8px !important;
-          width: auto !important;
-        }
-      }
-    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="root"></div>

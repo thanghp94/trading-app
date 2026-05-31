@@ -65,6 +65,59 @@ export interface BacktestRequest {
    * direction (support for bull, resistance for bear). Default false.
    */
   mtfZoneConfluence?: boolean;
+
+  // ─── Realism pack ─────────────────────────────────────────────────────
+  /**
+   * Per-side commission in basis points (1 bp = 0.01%). Applied on both
+   * entry fill and exit fill. VN HOSE retail ≈ 15 bps. Default 0.
+   */
+  feeBps?: number;
+  /**
+   * Additional sell-side tax in basis points. VN HOSE personal-income tax
+   * on sale value ≈ 10 bps. Default 0.
+   */
+  sellTaxBps?: number;
+  /**
+   * Lot size — min shares per trade. VN equity = 100, futures/crypto = 1.
+   * Position sizing rounds down to nearest multiple. If 0 shares fit the
+   * risk budget, trade is skipped. Default 1.
+   */
+  lotSize?: number;
+  /**
+   * Settlement gate — minimum bars between entry and any exit. VN cash
+   * equity T+2.5 ≈ 3 daily bars (cannot sell same day). 0 for futures,
+   * forex, crypto. SL/TP checks are suppressed during settlement; if hit
+   * during that window, exit waits until first eligible bar. Default 0.
+   */
+  settlementBars?: number;
+  /**
+   * VN session filter — when true, drops alerts that fire outside the HOSE
+   * trading window (Vietnam UTC+7): 09:00–11:30 morning + 13:00–14:45
+   * afternoon. Lunch break entries become un-fillable in reality.
+   * No-op on daily timeframe. Default false.
+   */
+  vnSessionFilter?: boolean;
+
+  // ─── Active trade management ─────────────────────────────────────────
+  /**
+   * Move SL to breakeven (entry price) once price moves +N×R in favor.
+   * Default 0 = disabled. Common values: 1, 1.5.
+   */
+  breakevenAtR?: number;
+  /**
+   * Exit `partialPct`% of position at +N×R, let runner go to TP. The
+   * runner's stop is moved to breakeven once the partial fires
+   * (independent of breakevenAtR). Default 0 = disabled.
+   */
+  partialAtR?: number;
+  /** Fraction (0–1) of shares to take off at partialAtR. Default 0.5. */
+  partialPct?: number;
+  /**
+   * ATR-based trailing stop. Once active (after partial or BE), trail SL
+   * by `trailAtrMult × ATR` from the running favorable extreme. Default
+   * 0 = disabled. Common: 2.0–3.0.
+   */
+  trailAtrMult?: number;
 }
 
 export type BacktestOutcome = 'win' | 'loss' | 'breakeven' | 'time-stop';
@@ -79,6 +132,7 @@ export interface BacktestTrade {
   exit: number;
   rMultiple: number;
   outcome: BacktestOutcome;
+  /** Net PnL after fees + tax. */
   pnlAbs: number;
   balanceAfter: number;
   /** Why this SL/TP was chosen — for transparency in result inspection. */
@@ -86,6 +140,21 @@ export interface BacktestTrade {
   tpReason: string;
   /** MTF check at entry time. Always populated, even when gating was off. */
   mtf: MtfCheck;
+  // ─── Realism additions ─────────────────────────────────────────────
+  /** Position size in shares (or contracts), lot-rounded. */
+  shares: number;
+  /** Total commission + sell-tax paid (always >= 0). */
+  feesPaid: number;
+  /** Raw PnL before fees. pnlAbs = grossPnl - feesPaid. */
+  grossPnl: number;
+  /** True when exit was delayed by settlement gate. */
+  settlementDelayed: boolean;
+  /** True if SL was moved to breakeven during the trade. */
+  beMoved: boolean;
+  /** True if a partial position was taken off before the final exit. */
+  partialTaken: boolean;
+  /** True if the trailing stop was the final exit trigger (not initial SL/TP). */
+  trailedOut: boolean;
 }
 
 export interface BacktestResult {
@@ -107,6 +176,21 @@ export interface BacktestResult {
     maxDrawdownPct: number;
     finalBalance: number;
     pnlPct: number;
+    /** Sum of all fees paid across trades. */
+    totalFees: number;
+    /** Trades skipped because lot-rounded shares = 0 (under-capitalized). */
+    skippedNoCapital: number;
+    /** Per-rule breakdown: which rule(s) actually made money. */
+    perRule: Array<{
+      rule: string;
+      total: number;
+      wins: number;
+      losses: number;
+      winRate: number;
+      sumR: number;
+      avgR: number;
+      pnlAbs: number;
+    }>;
   };
 }
 
@@ -138,8 +222,18 @@ export function runBacktest(req: BacktestRequest): BacktestResult {
   const preferredOnly = req.preferredOnly ?? false;
   const mtfTrendAlign = req.mtfTrendAlign ?? false;
   const mtfZoneConfluence = req.mtfZoneConfluence ?? false;
+  const feeBps = req.feeBps ?? 0;
+  const sellTaxBps = req.sellTaxBps ?? 0;
+  const lotSize = Math.max(1, req.lotSize ?? 1);
+  const settlementBars = Math.max(0, req.settlementBars ?? 0);
+  let skippedNoCapital = 0;
+  const vnSessionFilter = req.vnSessionFilter ?? false;
+  const breakevenAtR = req.breakevenAtR ?? 0;
+  const partialAtR = req.partialAtR ?? 0;
+  const partialPct = Math.max(0, Math.min(1, req.partialPct ?? 0.5));
+  const trailAtrMult = req.trailAtrMult ?? 0;
 
-  const alerts = replayAlerts(req.symbol, req.timeframe, req.candles, preferredOnly);
+  const alerts = replayAlerts(req.symbol, req.timeframe, req.candles, preferredOnly, vnSessionFilter);
   const atrSeries = atr(req.candles, 14);
 
   const trades: BacktestTrade[] = [];
@@ -227,57 +321,135 @@ export function runBacktest(req: BacktestRequest): BacktestResult {
       tpReason += ' [reverted-to-rr]';
     }
 
-    // ─── Walk forward to outcome ────────────────────────────────────────
+    // ─── Position sizing — lot-rounded shares from risk budget ─────────
+    const riskAmount = balance * (riskPct / 100);
+    const rawShares = riskAmount / slDist;
+    const shares = Math.floor(rawShares / lotSize) * lotSize;
+    if (shares <= 0) {
+      skippedNoCapital += 1;
+      continue;
+    }
+
+    // ─── Walk forward with active trade management ──────────────────────
+    // Dynamic state per trade:
+    //   activeSl  — current stop, may move to BE or trail
+    //   peakFav   — best favorable price seen (for trailing)
+    //   partialRealized — booked partial PnL (price-points × shares-taken)
+    //   sharesRemaining — runner shares after partial
     let exitIdx = entryIdx;
     let exit = entry;
-    let rMultiple = 0;
     let outcome: BacktestOutcome = 'time-stop';
+    let settlementDelayed = false;
+    let activeSl = sl;
+    let beMoved = false;
+    let partialTaken = false;
+    let trailedOut = false;
+    let partialPriceCaptured = 0; // price at which partial fired
+    let sharesRemaining = shares;
+    const sharesPartial = partialAtR > 0 ? Math.floor(shares * partialPct / lotSize) * lotSize : 0;
+    let peakFav = isBull ? entry : entry;
+    let finalRMultiple = 0;
 
     for (let i = entryIdx + 1; i < req.candles.length && i <= entryIdx + maxBars; i += 1) {
       const bar = req.candles[i];
-      const slHit = isBull ? bar.low <= sl : bar.high >= sl;
-      const tpHit = isBull ? bar.high >= tp : bar.low <= tp;
+      const barsSinceEntry = i - entryIdx;
+      const inSettlement = barsSinceEntry < settlementBars;
+
+      // Update favorable extreme + active-management triggers BEFORE stop check.
+      peakFav = isBull ? Math.max(peakFav, bar.high) : Math.min(peakFav, bar.low);
+      const favR = isBull ? (peakFav - entry) / slDist : (entry - peakFav) / slDist;
+
+      if (!inSettlement) {
+        // Partial exit
+        if (partialAtR > 0 && !partialTaken && sharesPartial > 0 && favR >= partialAtR) {
+          partialTaken = true;
+          partialPriceCaptured = isBull ? entry + partialAtR * slDist : entry - partialAtR * slDist;
+          sharesRemaining = shares - sharesPartial;
+          // Runner stop moves to BE on partial fire.
+          activeSl = entry;
+          beMoved = true;
+        }
+        // Breakeven SL move
+        if (breakevenAtR > 0 && !beMoved && favR >= breakevenAtR) {
+          activeSl = entry;
+          beMoved = true;
+        }
+        // Trail
+        if (trailAtrMult > 0 && (beMoved || partialTaken)) {
+          const trailDist = a * trailAtrMult;
+          const trailedSl = isBull ? peakFav - trailDist : peakFav + trailDist;
+          activeSl = isBull ? Math.max(activeSl, trailedSl) : Math.min(activeSl, trailedSl);
+        }
+      }
+
+      const slHit = !inSettlement && (isBull ? bar.low <= activeSl : bar.high >= activeSl);
+      const tpHit = !inSettlement && (isBull ? bar.high >= tp : bar.low <= tp);
+      if (inSettlement && (isBull ? bar.low <= activeSl || bar.high >= tp : bar.high >= activeSl || bar.low <= tp)) {
+        settlementDelayed = true;
+      }
+      // Determine if exit was via trail (SL hit AND activeSl moved past entry)
+      const slIsTrail = (isBull ? activeSl > entry : activeSl < entry);
       if (slHit && tpHit) {
-        exit = sl;
-        exitIdx = i;
-        outcome = 'loss';
-        rMultiple = -1;
+        exit = activeSl; exitIdx = i;
+        outcome = slIsTrail ? 'win' : 'loss';
+        trailedOut = slIsTrail;
         break;
       }
       if (slHit) {
-        exit = sl;
-        exitIdx = i;
-        outcome = 'loss';
-        rMultiple = -1;
+        exit = activeSl; exitIdx = i;
+        outcome = slIsTrail ? 'win' : (beMoved ? 'breakeven' : 'loss');
+        trailedOut = slIsTrail;
         break;
       }
       if (tpHit) {
-        exit = tp;
-        exitIdx = i;
+        exit = tp; exitIdx = i;
         outcome = 'win';
-        const reward = isBull ? exit - entry : entry - exit;
-        rMultiple = reward / slDist;
         break;
       }
       if (i === entryIdx + maxBars || i === req.candles.length - 1) {
-        exit = bar.close;
-        exitIdx = i;
+        exit = bar.close; exitIdx = i;
         const r = (isBull ? exit - entry : entry - exit) / slDist;
-        rMultiple = r;
         outcome = Math.abs(r) < 0.05 ? 'breakeven' : 'time-stop';
       }
     }
 
-    const riskAmount = balance * (riskPct / 100);
-    const pnlAbs = rMultiple * riskAmount;
+    // Compute R-multiple from price-action (used for diagnostics only;
+    // net R is recomputed below from net PnL after fees).
+    const runnerRewardPerShare = isBull ? exit - entry : entry - exit;
+    finalRMultiple = runnerRewardPerShare / slDist;
+
+    // ─── Fees: entry leg covers ALL shares; exit leg may be split into
+    // partial-leg + runner-leg, each fee'd separately at its own price. ─
+    const entryFee = shares * entry * (feeBps / 10_000);
+    const exitSellFeeBps = (feeBps + sellTaxBps) / 10_000;
+    const runnerExitShares = partialTaken ? sharesRemaining : shares;
+    const partialExitShares = partialTaken ? sharesPartial : 0;
+    const exitFeeRunner = runnerExitShares * exit * exitSellFeeBps;
+    const exitFeePartial = partialExitShares * partialPriceCaptured * exitSellFeeBps;
+    const feesPaid = entryFee + exitFeeRunner + exitFeePartial;
+
+    const runnerGross = runnerExitShares * (isBull ? exit - entry : entry - exit);
+    const partialGross = partialTaken
+      ? partialExitShares * (isBull ? partialPriceCaptured - entry : entry - partialPriceCaptured)
+      : 0;
+    const grossPnl = runnerGross + partialGross;
+    const pnlAbs = grossPnl - feesPaid;
+    // Recompute R-multiple on NET PnL so MTF/preferred toggles are judged
+    // against real account growth, not idealized R.
+    const netRMultiple = shares > 0 ? pnlAbs / (shares * slDist) : finalRMultiple;
+
     balance += pnlAbs;
     if (balance > peakBalance) peakBalance = balance;
     const dd = ((peakBalance - balance) / peakBalance) * 100;
     if (dd > maxDrawdownPct) maxDrawdownPct = dd;
 
     trades.push({
-      alert, entryIdx, exitIdx, entry, sl, tp, exit, rMultiple, outcome, pnlAbs,
+      alert, entryIdx, exitIdx, entry, sl, tp, exit,
+      rMultiple: netRMultiple,
+      outcome, pnlAbs,
       balanceAfter: balance, slReason, tpReason, mtf,
+      shares, feesPaid, grossPnl, settlementDelayed,
+      beMoved, partialTaken, trailedOut,
     });
     equity.push({ time: req.candles[exitIdx].time, balance });
   }
@@ -293,6 +465,33 @@ export function runBacktest(req: BacktestRequest): BacktestResult {
   const worstR = rs.length > 0 ? Math.min(...rs) : 0;
   const winRate = wins + losses > 0 ? wins / (wins + losses) : 0;
 
+  const totalFees = trades.reduce((s, t) => s + t.feesPaid, 0);
+
+  // Per-rule attribution: which rule(s) actually generate the equity?
+  const perRuleMap = new Map<string, { total: number; wins: number; losses: number; sumR: number; pnlAbs: number }>();
+  for (const t of trades) {
+    const k = t.alert.rule;
+    const cur = perRuleMap.get(k) ?? { total: 0, wins: 0, losses: 0, sumR: 0, pnlAbs: 0 };
+    cur.total += 1;
+    if (t.outcome === 'win') cur.wins += 1;
+    if (t.outcome === 'loss') cur.losses += 1;
+    cur.sumR += t.rMultiple;
+    cur.pnlAbs += t.pnlAbs;
+    perRuleMap.set(k, cur);
+  }
+  const perRule = [...perRuleMap.entries()]
+    .map(([rule, s]) => ({
+      rule,
+      total: s.total,
+      wins: s.wins,
+      losses: s.losses,
+      winRate: s.wins + s.losses > 0 ? s.wins / (s.wins + s.losses) : 0,
+      sumR: s.sumR,
+      avgR: s.total > 0 ? s.sumR / s.total : 0,
+      pnlAbs: s.pnlAbs,
+    }))
+    .sort((a, b) => b.sumR - a.sumR);
+
   return {
     symbol: req.symbol,
     timeframe: req.timeframe,
@@ -302,6 +501,7 @@ export function runBacktest(req: BacktestRequest): BacktestResult {
       total: trades.length, wins, losses, breakeven, timeStops, winRate,
       avgR, bestR, worstR, sumR, maxDrawdownPct, finalBalance: balance,
       pnlPct: ((balance - startingBalance) / startingBalance) * 100,
+      totalFees, skippedNoCapital, perRule,
     },
   };
 }
@@ -311,16 +511,21 @@ function replayAlerts(
   timeframe: Timeframe,
   candles: Candle[],
   preferredOnly: boolean,
+  vnSessionFilter: boolean,
 ): Alert[] {
   const out: Alert[] = [];
   const lastFiredBar = new Map<string, number>();
   let prevContext: Omit<RuleContext, 'prev'> | undefined;
   const stride = candleStrideSec(candles);
+  // VN session filter is a no-op on daily bars (each bar represents the
+  // whole session anyway).
+  const applySessionFilter = vnSessionFilter && timeframe !== '1d';
 
   for (let i = 50; i < candles.length; i += 1) {
     const slice = candles.slice(0, i + 1);
     const candle = slice[slice.length - 1];
     if (!candle.closed) continue;
+    if (applySessionFilter && !inVnSession(candle.time)) continue;
     const zones = computeZones(slice);
     const waves = computeWaves(slice);
     const ctx: RuleContext = {
@@ -351,4 +556,24 @@ function replayAlerts(
 function candleStrideSec(candles: Candle[]): number {
   if (candles.length < 2) return 60;
   return Math.max(60, candles[candles.length - 1].time - candles[candles.length - 2].time);
+}
+
+/**
+ * HOSE trading window in Vietnam time (UTC+7):
+ *   Morning continuous : 09:00 – 11:30
+ *   Afternoon continuous: 13:00 – 14:30
+ *   ATC                : 14:30 – 14:45
+ * Lunch break (11:30–13:00) is closed — entries firing there can't fill.
+ */
+function inVnSession(unixSec: number): boolean {
+  const vnSec = (unixSec + 7 * 3600) % 86400;
+  const hour = Math.floor(vnSec / 3600);
+  const minute = Math.floor((vnSec % 3600) / 60);
+  const mins = hour * 60 + minute;
+  const morningOpen = 9 * 60;       // 09:00
+  const morningClose = 11 * 60 + 30; // 11:30
+  const afternoonOpen = 13 * 60;     // 13:00
+  const afternoonClose = 14 * 60 + 45; // 14:45 incl. ATC
+  return (mins >= morningOpen && mins < morningClose)
+      || (mins >= afternoonOpen && mins < afternoonClose);
 }

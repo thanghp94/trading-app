@@ -1,14 +1,18 @@
-import type { Candle } from '../types.js';
+import type { Candle } from "../types.js";
 import {
   MAX_WAVE_POINT,
   MIN_PIVOT_DISTANCE_ATR,
   PIVOT_FRACTAL_N,
   RESET_NO_PIVOT_BARS,
   RESET_REJECTED_PIVOTS,
-} from '../config/thresholds.js';
-import { atr } from './atr.js';
-import { detectPivots, type Pivot } from './pivot-detector.js';
-import { detectImpulses, type ImpulseDirection, type ImpulseHit } from './impulse-detector.js';
+} from "../config/thresholds.js";
+import { atr } from "./atr.js";
+import { detectPivots, type Pivot } from "./pivot-detector.js";
+import {
+  detectImpulses,
+  type ImpulseDirection,
+  type ImpulseHit,
+} from "./impulse-detector.js";
 
 export type WavePointLabel = 0 | 1 | 2 | 3 | 4 | 5;
 
@@ -17,11 +21,15 @@ export interface WavePoint {
   /** Bar index in the source candle array. */
   index: number;
   time: number;
-  /** Price at the wave point — close for label 0 (impulse close), wick for labels 1-5 (pivot extreme). */
+  /** Price at the wave point — open for BEAR label 0, close for BULL label 0, wick for labels 1-5. */
   price: number;
 }
 
-export type WaveResetReason = 'beyond-0' | 'no-pivot-timeout' | 'chop-rejected' | 'completed';
+export type WaveResetReason =
+  | "beyond-0"
+  | "no-pivot-timeout"
+  | "chop-rejected"
+  | "completed";
 
 export interface WaveCount {
   id: string;
@@ -72,7 +80,10 @@ interface BuildOpts {
  * prior count is still active, the prior count is left alone (it can still
  * complete or reset on its own merits) and a new count is started.
  */
-export function computeWaves(candles: Candle[], opts: BuildOpts = {}): WaveCount[] {
+export function computeWaves(
+  candles: Candle[],
+  opts: BuildOpts = {},
+): WaveCount[] {
   const pivotN = opts.pivotN ?? PIVOT_FRACTAL_N;
   if (candles.length < 30) return [];
   const atrSeries = atr(candles, opts.atrPeriod ?? 14);
@@ -87,7 +98,9 @@ export function computeWaves(candles: Candle[], opts: BuildOpts = {}): WaveCount
   const counts: WaveCount[] = [];
 
   for (const imp of impulses) {
-    counts.push(buildOneWaveCount(candles, atrSeries, pivotByIndex, imp, pivotN));
+    counts.push(
+      buildOneWaveCount(candles, atrSeries, pivotByIndex, imp, pivotN),
+    );
   }
   return counts;
 }
@@ -100,7 +113,16 @@ function buildOneWaveCount(
   pivotN: number,
 ): WaveCount {
   const impulseBar = candles[imp.index];
-  const point0: WavePoint = { label: 0, index: imp.index, time: imp.time, price: impulseBar.close };
+  // BULL: point 0 at close (near HIGH of bull bar). BEAR: point 0 at open (the HIGH before the drop).
+  // Both cases put point 0 at the TOP of the impulse, so the zigzag flows naturally downward first.
+  const point0Price =
+    imp.direction === "bear" ? impulseBar.open : impulseBar.close;
+  const point0: WavePoint = {
+    label: 0,
+    index: imp.index,
+    time: imp.time,
+    price: point0Price,
+  };
 
   const count: WaveCount = {
     id: `w${imp.index}_${imp.time}`,
@@ -111,12 +133,13 @@ function buildOneWaveCount(
     active: true,
   };
 
-  // Expected pivot kind alternates. For BULL: pivots after 0 are LOW (1), HIGH (2), LOW (3), …
-  // For BEAR: HIGH (1), LOW (2), HIGH (3), …
-  const expectedKindFor = (label: WavePointLabel): 'high' | 'low' => {
-    if (imp.direction === 'bull') return label % 2 === 1 ? 'low' : 'high';
-    return label % 2 === 1 ? 'high' : 'low';
-  };
+  // Pivot kind alternates identically for both directions:
+  //   odd labels (1, 3, 5) → LOW pivot
+  //   even labels (2, 4)   → HIGH pivot
+  // BULL: HIGH-close(0) → LOW(1) → HIGH(2) → LOW(3) → HIGH(4) → LOW(5)
+  // BEAR: HIGH-open(0)  → LOW(1) → HIGH(2) → LOW(3) → HIGH(4) → LOW(5)
+  const expectedKindFor = (label: WavePointLabel): "high" | "low" =>
+    label % 2 === 1 ? "low" : "high";
 
   let rejectedStreak = 0;
   let lastPivotIndex = imp.index;
@@ -126,15 +149,15 @@ function buildOneWaveCount(
     const lastPoint = count.points[count.points.length - 1];
 
     // Reset 1 — close beyond point 0 against direction.
-    if (imp.direction === 'bull' && c.close < point0.price) {
+    if (imp.direction === "bull" && c.close < point0.price) {
       count.active = false;
-      count.resetReason = 'beyond-0';
+      count.resetReason = "beyond-0";
       count.endedAt = c.time;
       return count;
     }
-    if (imp.direction === 'bear' && c.close > point0.price) {
+    if (imp.direction === "bear" && c.close > point0.price) {
       count.active = false;
-      count.resetReason = 'beyond-0';
+      count.resetReason = "beyond-0";
       count.endedAt = c.time;
       return count;
     }
@@ -142,7 +165,7 @@ function buildOneWaveCount(
     // Reset 2 — too long with no new pivot. Measured from the last accepted pivot.
     if (i - lastPivotIndex >= RESET_NO_PIVOT_BARS) {
       count.active = false;
-      count.resetReason = 'no-pivot-timeout';
+      count.resetReason = "no-pivot-timeout";
       count.endedAt = c.time;
       return count;
     }
@@ -150,7 +173,7 @@ function buildOneWaveCount(
     // Reset 3 — too many close-pivot rejections in a row (chop).
     if (rejectedStreak >= RESET_REJECTED_PIVOTS) {
       count.active = false;
-      count.resetReason = 'chop-rejected';
+      count.resetReason = "chop-rejected";
       count.endedAt = c.time;
       return count;
     }
@@ -167,7 +190,8 @@ function buildOneWaveCount(
 
     // Min-distance check.
     const a = atrSeries[pivot.index];
-    const minDist = (Number.isFinite(a) && a > 0 ? a : 0) * MIN_PIVOT_DISTANCE_ATR;
+    const minDist =
+      (Number.isFinite(a) && a > 0 ? a : 0) * MIN_PIVOT_DISTANCE_ATR;
     const dist = Math.abs(pivot.wick - lastPoint.price);
     if (dist < minDist) {
       rejectedStreak += 1;
@@ -186,7 +210,7 @@ function buildOneWaveCount(
 
     if (nextLabel === MAX_WAVE_POINT) {
       count.active = false;
-      count.resetReason = 'completed';
+      count.resetReason = "completed";
       count.endedAt = c.time;
       return count;
     }

@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Candle, Timeframe } from '../../shared/types.js';
+import { MiniBacktestChart, type MiniTrade } from './MiniBacktestChart.js';
 
 interface BacktestPanelProps {
   symbol: string;
@@ -8,7 +9,19 @@ interface BacktestPanelProps {
 }
 
 interface BacktestResult {
-  trades: Array<{ entry: number; exit: number; rMultiple: number; outcome: string }>;
+  trades: Array<{
+    entryIdx: number;
+    exitIdx: number;
+    entry: number;
+    exit: number;
+    sl: number;
+    tp: number;
+    rMultiple: number;
+    outcome: 'win' | 'loss' | 'breakeven' | 'time-stop';
+    pnlAbs: number;
+    balanceAfter: number;
+    feesPaid: number;
+  }>;
   equity: Array<{ time: number; balance: number }>;
   stats: {
     total: number;
@@ -24,6 +37,9 @@ interface BacktestResult {
     maxDrawdownPct: number;
     finalBalance: number;
     pnlPct: number;
+    totalFees: number;
+    skippedNoCapital: number;
+    perRule: Array<{ rule: string; total: number; winRate: number; avgR: number; sumR: number }>;
   };
 }
 
@@ -44,7 +60,15 @@ export function BacktestPanel(props: BacktestPanelProps) {
   const [preferredOnly, setPreferredOnly] = useState(false);
   const [mtfTrendAlign, setMtfTrendAlign] = useState(false);
   const [mtfZoneConfluence, setMtfZoneConfluence] = useState(false);
+  // Realism pack (defaults all 0 — generic, no auto-VN here since this
+  // per-chart panel works for crypto/forex too)
+  const [feeBps, setFeeBps] = useState('0');
+  const [sellTaxBps, setSellTaxBps] = useState('0');
+  const [lotSize, setLotSize] = useState('1');
+  const [settlementBars, setSettlementBars] = useState('0');
+  const [vnSessionFilter, setVnSessionFilter] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
+  const [showChart, setShowChart] = useState(true);
 
   const run = async () => {
     setBusy(true);
@@ -68,6 +92,11 @@ export function BacktestPanel(props: BacktestPanelProps) {
           preferredOnly,
           mtfTrendAlign,
           mtfZoneConfluence,
+          feeBps: Number(feeBps),
+          sellTaxBps: Number(sellTaxBps),
+          lotSize: Number(lotSize),
+          settlementBars: Number(settlementBars),
+          vnSessionFilter,
         }),
       });
       const json = (await res.json()) as BacktestResult;
@@ -120,6 +149,17 @@ export function BacktestPanel(props: BacktestPanelProps) {
               <input type="checkbox" checked={mtfZoneConfluence} onChange={(e) => setMtfZoneConfluence(e.target.checked)} />
               HTF zone confluence
             </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#8b949e', cursor: 'pointer' }} title="Drops intraday alerts outside HOSE session (lunch break / closed hours)">
+              <input type="checkbox" checked={vnSessionFilter} onChange={(e) => setVnSessionFilter(e.target.checked)} />
+              VN session filter
+            </label>
+          </div>
+          {/* Realism row */}
+          <div style={{ ...modeRowStyle, paddingTop: 4, paddingBottom: 4, borderTop: '1px solid #21262d' }}>
+            <Field label="Fee bps"><input type="number" value={feeBps} onChange={(e) => setFeeBps(e.target.value)} style={inputStyle} /></Field>
+            <Field label="SellTax bps"><input type="number" value={sellTaxBps} onChange={(e) => setSellTaxBps(e.target.value)} style={inputStyle} /></Field>
+            <Field label="Lot size"><input type="number" value={lotSize} onChange={(e) => setLotSize(e.target.value)} style={inputStyle} /></Field>
+            <Field label="T+ bars"><input type="number" value={settlementBars} onChange={(e) => setSettlementBars(e.target.value)} style={inputStyle} /></Field>
           </div>
           <div style={paramsStyle}>
             <Field label={slMode === 'pct' ? 'SL %' : 'SL % (fallback)'}>
@@ -148,8 +188,39 @@ export function BacktestPanel(props: BacktestPanelProps) {
               <div style={statRowStyle}>
                 <span>Final ${result.stats.finalBalance.toFixed(0)} (<b style={{ color: result.stats.pnlPct >= 0 ? '#26a69a' : '#ef5350' }}>{result.stats.pnlPct >= 0 ? '+' : ''}{result.stats.pnlPct.toFixed(1)}%</b>)</span>
                 <span>Max DD {result.stats.maxDrawdownPct.toFixed(1)}%</span>
+                <span>Fees ${result.stats.totalFees.toFixed(0)}</span>
               </div>
-              <EquitySpark equity={result.equity} />
+              {result.stats.skippedNoCapital > 0 && (
+                <div style={{ fontSize: 10, color: '#f0b132' }}>
+                  ⚠ {result.stats.skippedNoCapital} trades skipped (lot-rounded shares = 0)
+                </div>
+              )}
+
+              {result.stats.perRule.length > 0 && (
+                <div style={{ borderTop: '1px solid #21262d', paddingTop: 4 }}>
+                  <div style={{ fontSize: 9, color: '#8b949e', textTransform: 'uppercase', marginBottom: 2 }}>Per-rule</div>
+                  {result.stats.perRule.map((r) => (
+                    <div key={r.rule} style={{ display: 'grid', gridTemplateColumns: '1.2fr 30px 40px 40px 40px', gap: 6, fontSize: 10, fontFamily: 'ui-monospace, monospace' }}>
+                      <span style={{ color: r.rule === 'wave-5-entry' ? '#f0b132' : '#c9d1d9' }}>{r.rule}</span>
+                      <span>{r.total}</span>
+                      <span style={{ color: r.winRate >= 0.5 ? '#26a69a' : '#ef5350' }}>{(r.winRate * 100).toFixed(0)}%</span>
+                      <span style={{ color: r.avgR >= 0 ? '#26a69a' : '#ef5350' }}>{r.avgR.toFixed(2)}R</span>
+                      <span style={{ color: r.sumR >= 0 ? '#26a69a' : '#ef5350' }}>{r.sumR.toFixed(1)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 6, fontSize: 10, color: '#8b949e' }}>
+                <label style={{ cursor: 'pointer' }}>
+                  <input type="checkbox" checked={showChart} onChange={(e) => setShowChart(e.target.checked)} /> Chart + replay
+                </label>
+              </div>
+              {showChart ? (
+                <PanelChartReplay candles={props.candles} trades={result.trades as MiniTrade[]} />
+              ) : (
+                <EquitySpark equity={result.equity} />
+              )}
             </div>
           )}
         </div>
@@ -157,6 +228,76 @@ export function BacktestPanel(props: BacktestPanelProps) {
     </span>
   );
 }
+
+/**
+ * Per-chart-cell inline replay. Compact controls (the panel is narrow).
+ * Mirrors the VN-panel version but scaled to ~340px wide.
+ */
+function PanelChartReplay({ candles, trades }: { candles: Candle[]; trades: MiniTrade[] }) {
+  const [enabled, setEnabled] = useState(false);
+  const [cursor, setCursor] = useState(() => Math.floor(candles.length * 0.7));
+  const [playing, setPlaying] = useState(false);
+  const intervalRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setCursor(Math.floor(candles.length * 0.7));
+    setPlaying(false);
+    setEnabled(false);
+  }, [candles]);
+
+  useEffect(() => {
+    if (!playing || !enabled) {
+      if (intervalRef.current != null) window.clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      return;
+    }
+    intervalRef.current = window.setInterval(() => {
+      setCursor((c) => {
+        if (c >= candles.length) { setPlaying(false); return candles.length; }
+        return c + 1;
+      });
+    }, 200);
+    return () => {
+      if (intervalRef.current != null) window.clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    };
+  }, [playing, enabled, candles.length]);
+
+  const step = (d: number) => setCursor((c) => Math.max(30, Math.min(candles.length, c + d)));
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center', padding: '4px 0', fontSize: 10, color: '#8b949e' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
+          <input type="checkbox" checked={enabled} onChange={(e) => { setEnabled(e.target.checked); setPlaying(false); }} />
+          Replay
+        </label>
+        {enabled && (
+          <>
+            <button type="button" onClick={() => step(-10)} style={miniBtnStyle}>−10</button>
+            <button type="button" onClick={() => step(-1)} style={miniBtnStyle}>−1</button>
+            <button type="button" onClick={() => setPlaying((p) => !p)} style={{ ...miniBtnStyle, background: playing ? '#ef5350' : '#26a69a', color: '#fff', border: 'none' }}>
+              {playing ? '⏸' : '▶'}
+            </button>
+            <button type="button" onClick={() => step(1)} style={miniBtnStyle}>+1</button>
+            <button type="button" onClick={() => step(10)} style={miniBtnStyle}>+10</button>
+            <span style={{ marginLeft: 'auto', fontFamily: 'ui-monospace, monospace' }}>{cursor}/{candles.length}</span>
+          </>
+        )}
+      </div>
+      <MiniBacktestChart candles={candles} trades={trades} height={220} cursor={enabled ? cursor : undefined} />
+      {enabled && (
+        <input type="range" min={30} max={candles.length} value={cursor}
+          onChange={(e) => setCursor(Number(e.target.value))}
+          style={{ width: '100%', marginTop: 2 }} />
+      )}
+    </div>
+  );
+}
+
+const miniBtnStyle: React.CSSProperties = {
+  padding: '2px 5px', fontSize: 10, background: '#0d1117', color: '#c9d1d9',
+  border: '1px solid #30363d', borderRadius: 3, cursor: 'pointer',
+};
 
 function EquitySpark({ equity }: { equity: Array<{ balance: number }> }) {
   if (equity.length < 2) return null;
@@ -200,13 +341,15 @@ const panelStyle: React.CSSProperties = {
   top: '100%',
   marginTop: 4,
   right: 0,
-  width: 360,
+  width: 480,
   background: '#0d1117',
   border: '1px solid #30363d',
   borderRadius: 4,
   boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
   zIndex: 50,
   fontSize: 12,
+  maxHeight: '80vh',
+  overflowY: 'auto',
 };
 const panelHeaderStyle: React.CSSProperties = {
   display: 'flex',

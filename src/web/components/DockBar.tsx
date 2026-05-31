@@ -13,6 +13,8 @@ const BUTTONS: DockButtonDef[] = [
   { id: "alerts", icon: "🔔", label: "Alerts", tier: "core" },
   { id: "watchlist", icon: "🎯", label: "Watchlist", tier: "core" },
   { id: "chat", icon: "💬", label: "Chat", tier: "core" },
+  { id: "market", icon: "🗺️", label: "Market", tier: "core" },
+  { id: "screener", icon: "📡", label: "Screener", tier: "advanced" },
   { id: "strategy", icon: "⚙️", label: "Strategy", tier: "advanced" },
   { id: "backtest", icon: "📊", label: "Backtest", tier: "advanced" },
 ];

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import ReconnectingWebSocket from 'reconnecting-websocket';
-import type { Candle, ClientMessage, ServerMessage, Timeframe } from '../shared/types.js';
+import type { Candle, ClientMessage, ServerMessage, Timeframe, DepthSnapshot } from '../shared/types.js';
 
 interface UseFeedOpts {
   symbol: string;
@@ -13,6 +13,7 @@ interface UseFeedOpts {
  */
 export function useFeed({ symbol, timeframe }: UseFeedOpts) {
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [depth, setDepth] = useState<DepthSnapshot | null>(null);
   const [status, setStatus] = useState<'connecting' | 'live' | 'closed'>('connecting');
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<ReconnectingWebSocket | null>(null);
@@ -48,6 +49,8 @@ export function useFeed({ symbol, timeframe }: UseFeedOpts) {
         setError(null);
       } else if (msg.type === 'tick' && msg.candle.symbol === symbol && msg.candle.timeframe === timeframe) {
         setCandles((prev) => mergeTick(prev, msg.candle));
+      } else if (msg.type === 'depth' && msg.depth.symbol === symbol) {
+        setDepth(msg.depth);
       } else if (msg.type === 'error') {
         setError(msg.message);
       }
@@ -59,7 +62,7 @@ export function useFeed({ symbol, timeframe }: UseFeedOpts) {
     };
   }, [symbol, timeframe]);
 
-  return { candles, status, error };
+  return { candles, depth, status, error };
 }
 
 function mergeTick(prev: Candle[], next: Candle): Candle[] {

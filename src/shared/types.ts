@@ -20,13 +20,21 @@ export type ClientMessage =
   | { type: 'subscribe'; symbol: string; timeframe: Timeframe }
   | { type: 'unsubscribe'; symbol: string; timeframe: Timeframe };
 
+export interface DepthSnapshot {
+  symbol: string;
+  bids: [number, number][]; // [price, quantity]
+  asks: [number, number][]; // [price, quantity]
+  timestamp: number;
+}
+
 export type ServerMessage =
   | { type: 'snapshot'; symbol: string; timeframe: Timeframe; candles: Candle[] }
   | { type: 'tick'; candle: Candle }
   | { type: 'status'; symbol: string; timeframe: Timeframe; state: AdapterState }
   | { type: 'error'; message: string }
   | { type: 'alert'; alert: Alert }
-  | { type: 'alert-history'; alerts: Alert[] };
+  | { type: 'alert-history'; alerts: Alert[] }
+  | { type: 'depth'; depth: DepthSnapshot };
 
 // ───────── Alerts ─────────
 

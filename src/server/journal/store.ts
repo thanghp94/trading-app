@@ -1,20 +1,24 @@
-import Database from 'better-sqlite3';
-import path from 'node:path';
-import fs from 'node:fs';
-import type { Alert } from '../../shared/types.js';
+import Database from "better-sqlite3";
+import path from "node:path";
+import fs from "node:fs";
+import type { Alert } from "../../shared/types.js";
 
-const DB_DIR = path.resolve(process.cwd(), 'data');
-const DB_PATH = process.env.JOURNAL_DB_PATH ?? path.join(DB_DIR, 'journal.db');
+const DB_DIR = path.resolve(process.cwd(), "data");
+const DB_PATH = process.env.JOURNAL_DB_PATH ?? path.join(DB_DIR, "journal.db");
 
-export type TradeOutcome = 'open' | 'win' | 'loss' | 'breakeven' | 'cancelled';
+export type TradeOutcome = "open" | "win" | "loss" | "breakeven" | "cancelled";
+
+/** Where the trade came from. */
+export type TradeSource = "alert" | "bot" | "manual";
 
 export interface TradeRow {
   id: string;
   alert_id: string | null;
   symbol: string;
   timeframe: string;
-  direction: 'bull' | 'bear';
+  direction: "bull" | "bear";
   rule: string | null;
+  source: TradeSource;
   entry_price: number;
   sl: number | null;
   tp: number | null;
@@ -44,8 +48,8 @@ export class JournalStore {
   constructor() {
     fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
     this.db = new Database(DB_PATH);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('synchronous = NORMAL');
+    this.db.pragma("journal_mode = WAL");
+    this.db.pragma("synchronous = NORMAL");
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS trades (
         id TEXT PRIMARY KEY,
@@ -54,6 +58,7 @@ export class JournalStore {
         timeframe TEXT NOT NULL,
         direction TEXT NOT NULL,
         rule TEXT,
+        source TEXT NOT NULL DEFAULT 'alert',
         entry_price REAL NOT NULL,
         sl REAL,
         tp REAL,
@@ -68,55 +73,109 @@ export class JournalStore {
       CREATE INDEX IF NOT EXISTS idx_trades_outcome ON trades(outcome);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_alert ON trades(alert_id) WHERE alert_id IS NOT NULL;
     `);
+    // Migrate existing DBs that don't have the source column yet.
+    try {
+      this.db.exec(
+        `ALTER TABLE trades ADD COLUMN source TEXT NOT NULL DEFAULT 'alert'`,
+      );
+    } catch {
+      /* column already exists */
+    }
   }
 
   /** Auto-log a fired alert as an "open" trade. Idempotent on alert_id. */
-  logFromAlert(alert: Alert): TradeRow | null {
+  logFromAlert(alert: Alert, source: TradeSource = "alert"): TradeRow | null {
     const id = `t_${alert.id}`;
     try {
       this.db
         .prepare(
-          `INSERT INTO trades (id, alert_id, symbol, timeframe, direction, rule, entry_price, outcome, opened_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)`,
+          `INSERT INTO trades (id, alert_id, symbol, timeframe, direction, rule, source, entry_price, outcome, opened_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)`,
         )
-        .run(id, alert.id, alert.symbol, alert.timeframe, alert.direction, alert.rule, alert.price, alert.time);
+        .run(
+          id,
+          alert.id,
+          alert.symbol,
+          alert.timeframe,
+          alert.direction,
+          alert.rule,
+          source,
+          alert.price,
+          alert.time,
+        );
       return this.get(id);
     } catch (err) {
-      // Unique constraint violation → already logged; that's fine.
-      if ((err as { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      if ((err as { code?: string }).code === "SQLITE_CONSTRAINT_UNIQUE") {
         return this.getByAlertId(alert.id);
       }
       throw err;
     }
   }
 
-  list(limit = 100): TradeRow[] {
+  list(limit = 100, source?: TradeSource): TradeRow[] {
+    if (source) {
+      return this.db
+        .prepare(
+          `SELECT * FROM trades WHERE source = ? ORDER BY opened_at DESC LIMIT ?`,
+        )
+        .all(source, limit) as TradeRow[];
+    }
     return this.db
       .prepare(`SELECT * FROM trades ORDER BY opened_at DESC LIMIT ?`)
       .all(limit) as TradeRow[];
   }
 
   get(id: string): TradeRow | null {
-    return (this.db.prepare(`SELECT * FROM trades WHERE id = ?`).get(id) as TradeRow | undefined) ?? null;
+    return (
+      (this.db.prepare(`SELECT * FROM trades WHERE id = ?`).get(id) as
+        | TradeRow
+        | undefined) ?? null
+    );
   }
 
   getByAlertId(alertId: string): TradeRow | null {
-    return (this.db.prepare(`SELECT * FROM trades WHERE alert_id = ?`).get(alertId) as TradeRow | undefined) ?? null;
+    return (
+      (this.db
+        .prepare(`SELECT * FROM trades WHERE alert_id = ?`)
+        .get(alertId) as TradeRow | undefined) ?? null
+    );
+  }
+
+  /** Re-tag source (e.g. promote 'alert' → 'bot' after Telegram execution). */
+  setSource(id: string, source: TradeSource): void {
+    this.db
+      .prepare(`UPDATE trades SET source = ? WHERE id = ?`)
+      .run(source, id);
   }
 
   /** Update mutable fields. Computes r_multiple if entry+sl+exit are known. */
-  update(id: string, patch: Partial<Pick<TradeRow, 'sl' | 'tp' | 'exit_price' | 'outcome' | 'notes' | 'closed_at'>>): TradeRow | null {
+  update(
+    id: string,
+    patch: Partial<
+      Pick<
+        TradeRow,
+        "sl" | "tp" | "exit_price" | "outcome" | "notes" | "closed_at"
+      >
+    >,
+  ): TradeRow | null {
     const existing = this.get(id);
     if (!existing) return null;
     const next = { ...existing, ...patch };
 
-    if (next.outcome !== 'open' && next.closed_at == null) {
+    if (next.outcome !== "open" && next.closed_at == null) {
       next.closed_at = Math.floor(Date.now() / 1000);
     }
-    if (next.entry_price != null && next.sl != null && next.exit_price != null) {
+    if (
+      next.entry_price != null &&
+      next.sl != null &&
+      next.exit_price != null
+    ) {
       const risk = Math.abs(next.entry_price - next.sl);
       if (risk > 0) {
-        const reward = next.direction === 'bull' ? next.exit_price - next.entry_price : next.entry_price - next.exit_price;
+        const reward =
+          next.direction === "bull"
+            ? next.exit_price - next.entry_price
+            : next.entry_price - next.exit_price;
         next.r_multiple = reward / risk;
       }
     }
@@ -125,11 +184,27 @@ export class JournalStore {
       .prepare(
         `UPDATE trades SET sl=?, tp=?, exit_price=?, outcome=?, notes=?, closed_at=?, r_multiple=? WHERE id=?`,
       )
-      .run(next.sl, next.tp, next.exit_price, next.outcome, next.notes, next.closed_at, next.r_multiple, id);
+      .run(
+        next.sl,
+        next.tp,
+        next.exit_price,
+        next.outcome,
+        next.notes,
+        next.closed_at,
+        next.r_multiple,
+        id,
+      );
     return this.get(id);
   }
 
-  stats(): { total: number; wins: number; losses: number; breakeven: number; open: number; avgR: number } {
+  stats(): {
+    total: number;
+    wins: number;
+    losses: number;
+    breakeven: number;
+    open: number;
+    avgR: number;
+  } {
     const rows = this.db
       .prepare(`SELECT outcome, r_multiple FROM trades`)
       .all() as Array<{ outcome: TradeOutcome; r_multiple: number | null }>;
@@ -140,15 +215,22 @@ export class JournalStore {
     let rSum = 0;
     let rCount = 0;
     for (const r of rows) {
-      if (r.outcome === 'win') wins += 1;
-      else if (r.outcome === 'loss') losses += 1;
-      else if (r.outcome === 'breakeven') breakeven += 1;
-      else if (r.outcome === 'open') open += 1;
+      if (r.outcome === "win") wins += 1;
+      else if (r.outcome === "loss") losses += 1;
+      else if (r.outcome === "breakeven") breakeven += 1;
+      else if (r.outcome === "open") open += 1;
       if (r.r_multiple != null && Number.isFinite(r.r_multiple)) {
         rSum += r.r_multiple;
         rCount += 1;
       }
     }
-    return { total: rows.length, wins, losses, breakeven, open, avgR: rCount > 0 ? rSum / rCount : 0 };
+    return {
+      total: rows.length,
+      wins,
+      losses,
+      breakeven,
+      open,
+      avgR: rCount > 0 ? rSum / rCount : 0,
+    };
   }
 }

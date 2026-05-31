@@ -27,7 +27,7 @@ export interface ChatContext {
   activePanel?: string;
 }
 
-type ProviderName = "anthropic" | "openai" | "groq";
+type ProviderName = "anthropic" | "openai" | "groq" | "deepseek";
 
 interface ProviderConfig {
   name: ProviderName;
@@ -48,12 +48,17 @@ const PROVIDER_DEFAULTS: Record<
     model: "llama-3.3-70b-versatile",
     baseURL: "https://api.groq.com/openai/v1",
   },
+  deepseek: {
+    model: "deepseek-chat",
+    baseURL: "https://api.deepseek.com",
+  },
 };
 
 const KEY_ENV: Record<ProviderName, string> = {
   anthropic: "ANTHROPIC_API_KEY",
   openai: "OPENAI_API_KEY",
   groq: "GROQ_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
 };
 
 // ─── System prompt ────────────────────────────────────────────────────────────

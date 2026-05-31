@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hướng dẫn sử dụng · Trading App</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #0d1117;
+        --bg-soft: #161b22;
+        --border: #30363d;
+        --text: #c9d1d9;
+        --muted: #8b949e;
+        --accent: #388bfd;
+        --bull: #26a69a;
+        --bear: #ef5350;
+        --warn: #d4a72c;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Inter", -apple-system, system-ui, sans-serif;
+        font-size: 15px;
+        line-height: 1.65;
+      }
+      .layout { display: flex; max-width: 1100px; margin: 0 auto; }
+      nav {
+        position: sticky;
+        top: 0;
+        align-self: flex-start;
+        height: 100vh;
+        width: 230px;
+        flex-shrink: 0;
+        padding: 24px 16px;
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+      }
+      nav .brand { font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+      nav .sub { font-size: 11px; color: var(--muted); margin-bottom: 18px; }
+      nav a {
+        display: block;
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 13px;
+        padding: 5px 8px;
+        border-radius: 4px;
+      }
+      nav a:hover { background: var(--bg-soft); color: var(--text); }
+      main { flex: 1; min-width: 0; padding: 32px 36px 120px; }
+      h1 { font-size: 26px; font-weight: 700; margin: 0 0 4px; }
+      h1 + .lead { color: var(--muted); font-size: 14px; margin: 0 0 28px; }
+      section { scroll-margin-top: 24px; margin-bottom: 36px; }
+      h2 {
+        font-size: 19px;
+        font-weight: 600;
+        margin: 0 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--border);
+      }
+      h3 { font-size: 15px; font-weight: 600; margin: 18px 0 6px; }
+      p { margin: 0 0 10px; }
+      ul, ol { margin: 0 0 12px; padding-left: 22px; }
+      li { margin-bottom: 5px; }
+      code, kbd {
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        padding: 1px 6px;
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 12px;
+        color: var(--text);
+      }
+      .btn {
+        display: inline-block;
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 1px 7px;
+        font-size: 12px;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .tag-bull { color: var(--bull); border-color: var(--bull); }
+      .tag-bear { color: var(--bear); border-color: var(--bear); }
+      table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 13px; }
+      th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+      th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+      td:first-child { white-space: nowrap; }
+      .card {
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--accent);
+        border-radius: 4px;
+        padding: 12px 14px;
+        margin: 12px 0;
+        font-size: 13px;
+      }
+      .card.warn { border-left-color: var(--warn); }
+      .card .t { font-weight: 600; margin-bottom: 4px; }
+      .muted { color: var(--muted); }
+      .back { display: inline-block; margin-bottom: 18px; color: var(--accent); text-decoration: none; font-size: 13px; }
+      .back:hover { text-decoration: underline; }
+      @media (max-width: 760px) {
+        nav { display: none; }
+        main { padding: 22px 18px 80px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <div class="brand">TRADING APP</div>
+        <div class="sub">Hướng dẫn sử dụng</div>
+        <a href="#tong-quan">Tổng quan</a>
+        <a href="#bo-cuc">Bố cục màn hình</a>
+        <a href="#chart">Quản lý chart</a>
+        <a href="#symbol">Symbol & khung thời gian</a>
+        <a href="#toolbar">Thanh công cụ chart</a>
+        <a href="#replay">Chế độ Replay</a>
+        <a href="#paper">Paper Trading</a>
+        <a href="#backtest">Backtest & chiến lược</a>
+        <a href="#panels">Watchlist · Alert · Journal</a>
+        <a href="#phim-tat">Phím tắt</a>
+        <a href="#thuat-ngu">Thuật ngữ</a>
+      </nav>
+
+      <main>
+        <a class="back" href="/">← Quay lại ứng dụng</a>
+        <h1>Hướng dẫn sử dụng</h1>
+        <p class="lead">Cách dùng các tính năng chính của Trading App — chart, công cụ, paper trading và backtest.</p>
+
+        <section id="tong-quan">
+          <h2>Tổng quan</h2>
+          <p>App hiển thị nhiều chart cùng lúc trên một lưới. Mỗi ô (cell) là một chart độc lập với symbol và khung thời gian riêng. Các bảng điều khiển (panel) nổi quanh màn hình cho phép theo dõi danh mục, đặt lệnh giấy (paper), xem nhật ký giao dịch và chạy backtest.</p>
+          <p>Mọi cài đặt layout (số chart, symbol, các nút bật/tắt) được lưu tự động vào trình duyệt — mở lại vẫn giữ nguyên.</p>
+        </section>
+
+        <section id="bo-cuc">
+          <h2>Bố cục màn hình</h2>
+          <ul>
+            <li><b>Header (trên cùng):</b> tên app, P&L hôm nay, phiên thị trường đang mở, nút đổi theme sáng/tối, điều khiển layout, nút <span class="btn">?</span> phím tắt và <span class="btn">📖 Hướng dẫn</span>.</li>
+            <li><b>Lưới chart (giữa):</b> các ô chart. Ô đang chọn có viền xanh — phím tắt áp dụng cho ô này.</li>
+            <li><b>Các panel nổi:</b> Position Sizer, Paper Trading, Strategy Builder, Watchlist, VN Backtest, Alert, Journal… Bấm tiêu đề panel để mở/thu gọn.</li>
+          </ul>
+        </section>
+
+        <section id="chart">
+          <h2>Quản lý chart</h2>
+          <ul>
+            <li><b>Thêm chart:</b> bấm <span class="btn">+ Chart</span> trên header.</li>
+            <li><b>Xóa chart:</b> bấm <span class="btn">×</span> ở góc phải thanh công cụ của ô đó.</li>
+            <li><b>Số cột:</b> chỉnh số cột (1–6) để xếp lưới dày/thưa.</li>
+            <li><b>Layout preset:</b> lưu bố cục hiện tại thành preset có tên, áp dụng lại bằng một cú bấm (vd "Crypto sáng", "Phiên vàng", "CK Việt Nam"). Áp preset nhanh bằng <kbd>Shift</kbd> + <kbd>1..9</kbd>.</li>
+            <li><b>Reset:</b> đưa về bố cục mặc định.</li>
+          </ul>
+        </section>
+
+        <section id="symbol">
+          <h2>Symbol & khung thời gian</h2>
+          <p>Mỗi ô có 2 ô chọn (dropdown): <b>symbol</b> và <b>khung thời gian</b>.</p>
+          <h3>Nhóm symbol</h3>
+          <table>
+            <thead><tr><th>Nhóm</th><th>Ví dụ</th></tr></thead>
+            <tbody>
+              <tr><td>Crypto (Binance)</td><td>BTCUSDT, ETHUSDT, SOLUSDT, PAXGUSDT…</td></tr>
+              <tr><td>Forex/Kim loại (TwelveData)</td><td>XAUUSD, XAGUSD, EURUSD, USDJPY…</td></tr>
+              <tr><td>Cổ phiếu VN (TCBS)</td><td>HPG, VCB, FPT, MWG, VN30F1M…</td></tr>
+            </tbody>
+          </table>
+          <p>Khung thời gian: <code>1m · 5m · 15m · 1h · 4h · 1d</code>. Đổi nhanh khung cho ô đang chọn bằng phím <kbd>1</kbd>–<kbd>6</kbd>. Tìm symbol nhanh bằng phím <kbd>S</kbd>.</p>
+        </section>
+
+        <section id="toolbar">
+          <h2>Thanh công cụ chart</h2>
+          <p>Mỗi nút bật/tắt riêng cho từng ô, trạng thái được lưu lại.</p>
+          <table>
+            <thead><tr><th>Nút</th><th>Chức năng</th></tr></thead>
+            <tbody>
+              <tr><td><span class="btn">EMA</span></td><td>Hiện/ẩn đường trung bình EMA (20/50/200).</td></tr>
+              <tr><td><span class="btn">HTF</span></td><td>Phủ vùng hỗ trợ/kháng cự (zone) từ khung thời gian lớn hơn.</td></tr>
+              <tr><td><span class="btn">HA</span></td><td>Vẽ nến Heikin-Ashi (mượt xu hướng). Chỉ đổi cách vẽ — chỉ báo vẫn tính trên nến gốc.</td></tr>
+              <tr><td><span class="btn">Ẩn lệnh</span></td><td>Ẩn/hiện đường <span class="btn tag-bull">BULL ENTRY</span> / <span class="btn tag-bear">BEAR ENTRY</span> và SL/TP của lệnh đang mở. Chỉ ẩn hiển thị cho gọn — không xóa lệnh.</td></tr>
+              <tr><td><span class="btn">🪟 Triplet</span></td><td>Mở symbol hiện tại thành bộ 3 chart 1H/15m/5m. Bấm vào một cây nến ở bất kỳ chart nào → 2 chart còn lại cuộn tới cùng vị trí.</td></tr>
+              <tr><td><span class="btn">🔍 Analyze</span></td><td>Phân tích nhanh: zone, sóng, tín hiệu vào lệnh trên symbol/khung hiện tại.</td></tr>
+              <tr><td><span class="btn">Backtest</span></td><td>Chạy backtest chiến lược trên dữ liệu lịch sử của chart này.</td></tr>
+            </tbody>
+          </table>
+          <div class="card warn">
+            <div class="t">⚠ Cảnh báo "Preparing"</div>
+            Khi một cây nến đang hình thành đạt tiêu chí xung lực mạnh, app hiện banner vàng "Preparing". Nguyên tắc: <b>chờ nến đóng rồi mới vào lệnh</b> — không vào khi nến chưa xác nhận.
+          </div>
+        </section>
+
+        <section id="replay">
+          <h2>Chế độ Replay</h2>
+          <p>Replay tua lại lịch sử để luyện đọc chart như đang diễn ra trực tiếp.</p>
+          <ul>
+            <li>Bật/tắt replay trên ô đang chọn bằng phím <kbd>R</kbd> hoặc nút ⏯ trên thanh công cụ.</li>
+            <li>Tua từng nến (step), phát tự động (play), chỉnh tốc độ.</li>
+            <li>Trong replay, banner "Preparing" tắt vì mọi nến đã đóng.</li>
+          </ul>
+        </section>
+
+        <section id="paper">
+          <h2>Paper Trading (giao dịch giấy)</h2>
+          <p>Panel <span class="btn">💼 Paper Trading</span> bên trái — đặt lệnh ảo để tập, không dùng tiền thật.</p>
+          <ul>
+            <li><b>Market Buy / Market Sell:</b> mở lệnh mua/bán ngay theo giá thị trường cho symbol nhập vào.</li>
+            <li><b>Open Positions:</b> danh sách lệnh đang mở. Bấm <span class="btn tag-bear">×</span> để hủy một lệnh, hoặc <span class="btn tag-bear">Cancel all</span> để hủy tất cả.</li>
+            <li>Hủy lệnh (cancel) sẽ xóa lệnh khỏi danh sách <b>và</b> bỏ đường ENTRY/SL/TP của nó trên chart.</li>
+            <li><b>Virtual Equity:</b> vốn ảo, cập nhật theo tổng R-multiple (giả định rủi ro 100$ cho mỗi 1R).</li>
+          </ul>
+          <div class="card">
+            <div class="t">Phân biệt "Ẩn lệnh" và "Cancel"</div>
+            <b>Ẩn lệnh</b> (nút trên chart) chỉ giấu đường kẻ cho đỡ rối — lệnh vẫn còn.
+            <b>Cancel</b> (panel Paper Trading) xóa lệnh thật khỏi nhật ký.
+          </div>
+        </section>
+
+        <section id="backtest">
+          <h2>Backtest & chiến lược</h2>
+          <table>
+            <thead><tr><th>Panel</th><th>Dùng để</th></tr></thead>
+            <tbody>
+              <tr><td><span class="btn">⚙ Strategy Builder</span></td><td>Tùy chỉnh tham số chiến lược (loại entry, SL/TP, lọc khung lớn…).</td></tr>
+              <tr><td><span class="btn">🇻🇳 VN Backtest</span></td><td>Backtest cho cổ phiếu Việt Nam — đã tính phí, thuế bán, lot 100, gate T+2.5, lọc phiên HOSE.</td></tr>
+              <tr><td><span class="btn">Backtest Runs</span></td><td>Lịch sử các lần chạy backtest đã lưu để so sánh.</td></tr>
+              <tr><td><span class="btn">Sweep</span></td><td>Quét nhiều tổ hợp tham số một lượt, xem heatmap kết quả.</td></tr>
+              <tr><td><span class="btn">Portfolio</span></td><td>Ghép nhiều symbol/chiến lược thành một đường vốn danh mục.</td></tr>
+            </tbody>
+          </table>
+          <p class="muted">Xem ý nghĩa các chỉ số (win-rate, avg-R, max-DD, walk-forward…) ở mục <a href="#thuat-ngu" style="color:var(--accent)">Thuật ngữ</a>.</p>
+        </section>
+
+        <section id="panels">
+          <h2>Watchlist · Alert · Journal</h2>
+          <ul>
+            <li><b>Watchlist:</b> danh sách theo dõi. Bấm một dòng để nạp symbol/khung đó vào chart đầu tiên.</li>
+            <li><b>Alert:</b> cảnh báo khi tín hiệu kích hoạt. Mỗi alert nổ ra tự tạo một lệnh "open" trong nhật ký.</li>
+            <li><b>Journal:</b> nhật ký giao dịch — symbol, hướng, entry, SL/TP, kết quả, R-multiple. Xuất CSV để phân tích.</li>
+            <li><b>Position Sizer:</b> tính khối lượng vào lệnh từ vốn, % rủi ro và khoảng cách SL.</li>
+          </ul>
+        </section>
+
+        <section id="phim-tat">
+          <h2>Phím tắt</h2>
+          <table>
+            <thead><tr><th>Phím</th><th>Tác dụng</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Chuyển ô chart kế / trước (ô active = viền xanh).</td></tr>
+              <tr><td><kbd>1</kbd> – <kbd>6</kbd></td><td>Đổi khung ô active: 1m / 5m / 15m / 1h / 4h / 1d.</td></tr>
+              <tr><td><kbd>S</kbd></td><td>Mở tìm symbol cho ô active — gõ để lọc, ↑↓ để chọn.</td></tr>
+              <tr><td><kbd>R</kbd></td><td>Bật/tắt chế độ replay trên ô active.</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>1..9</kbd></td><td>Áp layout preset thứ N.</td></tr>
+              <tr><td><kbd>?</kbd></td><td>Hiện/ẩn bảng phím tắt.</td></tr>
+            </tbody>
+          </table>
+          <p class="muted">Phím tắt bị tạm khóa khi đang gõ trong ô nhập liệu.</p>
+        </section>
+
+        <section id="thuat-ngu">
+          <h2>Thuật ngữ</h2>
+          <table>
+            <thead><tr><th>Thuật ngữ</th><th>Giải thích</th></tr></thead>
+            <tbody>
+              <tr><td>R-multiple</td><td>Lãi/lỗ tính theo bội số rủi ro ban đầu (entry → SL). +2R = lãi gấp 2 lần số rủi ro; −1R = chạm SL.</td></tr>
+              <tr><td>SL / TP</td><td>Stop Loss (cắt lỗ) / Take Profit (chốt lời).</td></tr>
+              <tr><td>R:R</td><td>Tỷ lệ lời/lỗ = khoảng TP ÷ khoảng SL. R:R=2 → rủi ro 1 ăn 2.</td></tr>
+              <tr><td>ATR</td><td>Biên độ dao động trung bình 14 nến. Đo độ biến động — dùng để đệm SL.</td></tr>
+              <tr><td>EMA</td><td>Trung bình động mũ — ưu tiên các nến gần hơn.</td></tr>
+              <tr><td>Pivot</td><td>Đỉnh/đáy cục bộ (swing). Nền tảng để dựng zone và đếm sóng.</td></tr>
+              <tr><td>Zone</td><td>Vùng hỗ trợ/kháng cự — dải giá đã phản ứng nhiều lần.</td></tr>
+              <tr><td>HTF</td><td>Khung thời gian lớn hơn — dùng làm bối cảnh.</td></tr>
+              <tr><td>Confluence</td><td>Nhiều tín hiệu độc lập trùng tại một mức giá → xác suất cao hơn.</td></tr>
+              <tr><td>Wave-5 entry ★</td><td>Điểm vào ưu tiên: sau nhịp xung 1-2-3-4 sạch, vào ở nhịp sóng 5 đẩy vào kháng cự trước đó.</td></tr>
+              <tr><td>Win-rate</td><td>Số thắng ÷ (thắng + thua). Không tính lệnh hòa vốn.</td></tr>
+              <tr><td>Avg-R</td><td>R-multiple trung bình mọi lệnh. &gt;0.3R thường coi là khả thi.</td></tr>
+              <tr><td>Max-DD</td><td>Sụt giảm đỉnh-đáy lớn nhất của đường vốn (%). Chỉ số sống còn.</td></tr>
+              <tr><td>Walk-forward</td><td>Chia train/test: tối ưu trên 70% lịch sử, kiểm trên 30% chưa từng thấy. Lệch lớn = overfit.</td></tr>
+              <tr><td>Overfit</td><td>Cấu hình đẹp trên backtest chỉ vì khớp đúng đoạn lịch sử đó. Walk-forward phơi bày.</td></tr>
+              <tr><td>T+ (T+2.5)</td><td>CK cơ sở VN: không bán được cổ vừa mua trong ~3 phiên. SL/TP bị tạm ngưng trong cửa sổ này.</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <a class="back" href="/">← Quay lại ứng dụng</a>
+      </main>
+    </div>
+  </body>
+</html>

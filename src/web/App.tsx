@@ -1,14 +1,19 @@
 import { useState } from "react";
 import { ChartCell } from "./components/ChartCell.js";
+import { ShareButton } from "./components/ShareButton.js";
+import { TripletView } from "./components/TripletView.js";
 import { LayoutControls } from "./components/LayoutControls.js";
 import { AlertPanel } from "./components/AlertPanel.js";
 import { JournalPanel } from "./components/JournalPanel.js";
 import { PositionSizer } from "./components/PositionSizer.js";
 import { WatchlistPanel } from "./components/WatchlistPanel.js";
+import { ScreenerPanel } from "./components/ScreenerPanel.js";
 import { PaperTradingPanel } from "./components/PaperTradingPanel.js";
 import { StrategyBuilderPanel } from "./components/StrategyBuilderPanel.js";
 import { BacktestHub } from "./components/BacktestHub.js";
 import { ChatPanel } from "./components/ChatPanel.js";
+import { MarketOverviewPanel } from "./components/MarketOverviewPanel.js";
+import { TickerDetailPanel } from "./components/TickerDetailPanel.js";
 import { DockBar } from "./components/DockBar.js";
 import { HelpOverlay } from "./components/HelpOverlay.js";
 import { SymbolSearch } from "./components/SymbolSearch.js";
@@ -21,9 +26,11 @@ import { useShortcuts } from "./use-shortcuts.js";
 import { useDailyPnl } from "./use-daily-pnl.js";
 import { useJournal } from "./use-journal.js";
 import { useDock } from "./use-dock.js";
+import { useWakeLock } from "./use-wake-lock.js";
 import type { Timeframe } from "../shared/types.js";
 
 export function App() {
+  useWakeLock();
   const {
     layout,
     saved,
@@ -47,8 +54,22 @@ export function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [symbolSearchOpen, setSymbolSearchOpen] = useState(false);
   const [watchCount, setWatchCount] = useState(0);
+  const [tickerSymbol, setTickerSymbol] = useState<string | null>(null);
 
   const activeCell = layout.cells[activeIdx];
+
+  const isTriplet =
+    layout.cells.length === 3 &&
+    layout.cells.every((c) => c.id.startsWith("tr-"));
+  // Triplet renders its own 3 charts (ids triplet-0..2) in a 3-col grid;
+  // grid mode shares the real cells. ShareButton needs the on-screen set.
+  const shareCells = isTriplet
+    ? [0, 1, 2].map((i) => ({
+        id: `triplet-${i}`,
+        symbol: layout.cells[0].symbol,
+      }))
+    : layout.cells;
+  const shareCols = isTriplet ? 3 : layout.cols;
 
   useShortcuts({
     nextCell: () =>
@@ -129,6 +150,7 @@ export function App() {
           onApplySaved={applySaved}
           onDeleteSaved={deleteSaved}
         />
+        <ShareButton cells={shareCells} cols={shareCols} />
         <a
           href="/guide.html"
           target="_blank"
@@ -147,33 +169,51 @@ export function App() {
           ?
         </button>
       </header>
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          display: "grid",
-          gridTemplateColumns: `repeat(${layout.cols}, 1fr)`,
-          gridAutoRows: "1fr",
-          gap: 6,
-        }}
-      >
-        {layout.cells.map((cell, i) => (
-          <ChartCell
-            key={cell.id}
-            cell={cell}
-            active={i === activeIdx}
-            onChange={(patch) => updateCell(cell.id, patch)}
-            onRemove={() => removeCell(cell.id)}
-            onFocus={() => setActiveIdx(i)}
-            onTriplet={openTriplet}
-          />
-        ))}
-        {layout.cells.length === 0 && (
-          <div style={emptyStyle}>
-            No charts. Click <strong>+ Chart</strong> to add one.
-          </div>
-        )}
-      </div>
+      {/* Triplet mode: all 3 cells share a timestamp-based replay cursor */}
+      {isTriplet ? (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <TripletView symbol={layout.cells[0].symbol} onExit={reset} />
+        </div>
+      ) : (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "grid",
+            gridTemplateColumns: `repeat(${layout.cols}, 1fr)`,
+            gridAutoRows: "1fr",
+            gap: 6,
+          }}
+        >
+          {layout.cells.map((cell, i) => (
+            <ChartCell
+              key={cell.id}
+              cell={cell}
+              active={i === activeIdx}
+              onChange={(patch) => updateCell(cell.id, patch)}
+              onRemove={() => removeCell(cell.id)}
+              onFocus={() => setActiveIdx(i)}
+              onTriplet={openTriplet}
+              onTickerDetail={(sym) => {
+                setTickerSymbol(sym);
+                dock.open("ticker");
+              }}
+            />
+          ))}
+          {layout.cells.length === 0 && (
+            <div style={emptyStyle}>
+              No charts. Click <strong>+ Chart</strong> to add one.
+            </div>
+          )}
+        </div>
+      )}
       <PositionSizer />
       <PaperTradingPanel
         open={dock.activePanel === "paper"}
@@ -191,6 +231,11 @@ export function App() {
         onClose={dock.close}
         onPick={onWatchlistPick}
         onCount={setWatchCount}
+      />
+      <ScreenerPanel
+        open={dock.activePanel === "screener"}
+        onClose={dock.close}
+        onPick={onWatchlistPick}
       />
       <BacktestHub
         open={dock.activePanel === "backtest"}
@@ -214,6 +259,15 @@ export function App() {
         onClose={dock.close}
         symbol={activeCell?.symbol}
         timeframe={activeCell?.timeframe}
+      />
+      <MarketOverviewPanel
+        open={dock.activePanel === "market"}
+        onClose={dock.close}
+      />
+      <TickerDetailPanel
+        open={dock.activePanel === "ticker"}
+        symbol={tickerSymbol}
+        onClose={dock.close}
       />
       <DockBar
         active={dock.activePanel}

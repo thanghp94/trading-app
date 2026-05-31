@@ -1,7 +1,8 @@
-import type { Candle, Timeframe } from '../../shared/types.js';
-import { computeZones } from '../../shared/indicators/sr-zone-tracker.js';
-import { computeWaves } from '../../shared/indicators/wave-counter.js';
-import { detectImpulses } from '../../shared/indicators/impulse-detector.js';
+import type { Candle, Timeframe } from "../../shared/types.js";
+import { computeZones } from "../../shared/indicators/sr-zone-tracker.js";
+import { computeWaves } from "../../shared/indicators/wave-counter.js";
+import { detectImpulses } from "../../shared/indicators/impulse-detector.js";
+import { fmtPrice } from "../alerts/fmt-price.js";
 
 export interface ScannerEntry {
   symbol: string;
@@ -29,7 +30,11 @@ interface ScanInputs {
  *
  * Weights are eyeballed; calibrate via backtest later.
  */
-export function scoreOne({ symbol, timeframe, candles }: ScanInputs): ScannerEntry | null {
+export function scoreOne({
+  symbol,
+  timeframe,
+  candles,
+}: ScanInputs): ScannerEntry | null {
   if (candles.length < 60) return null;
   const last = candles[candles.length - 1];
   const zones = computeZones(candles);
@@ -45,13 +50,19 @@ export function scoreOne({ symbol, timeframe, candles }: ScanInputs): ScannerEnt
     const lastPt = activeWave.points[activeWave.points.length - 1].label;
     if (lastPt === 2 || lastPt === 4) {
       score += 50;
-      reasons.push(`wave-${(lastPt + 1) as 3 | 5} entry forming (${activeWave.direction})`);
+      reasons.push(
+        `wave-${(lastPt + 1) as 3 | 5} entry forming (${activeWave.direction})`,
+      );
     } else if (lastPt === 1 || lastPt === 3) {
       score += 25;
-      reasons.push(`wave at point ${lastPt} (${activeWave.direction}) — building`);
+      reasons.push(
+        `wave at point ${lastPt} (${activeWave.direction}) — building`,
+      );
     } else if (lastPt === 0) {
       score += 10;
-      reasons.push(`fresh impulse, wave count starting (${activeWave.direction})`);
+      reasons.push(
+        `fresh impulse, wave count starting (${activeWave.direction})`,
+      );
     }
   }
 
@@ -60,7 +71,9 @@ export function scoreOne({ symbol, timeframe, candles }: ScanInputs): ScannerEnt
   for (let i = candles.length - 4; i < candles.length; i += 1) {
     if (i < 0) continue;
     const c = candles[i];
-    const touched = zones.find((z) => z.state === 'active' && c.high >= z.bottom && c.low <= z.top);
+    const touched = zones.find(
+      (z) => z.state === "active" && c.high >= z.bottom && c.low <= z.top,
+    );
     if (touched) {
       const baseBonus = 20;
       // Strength multiplier: weak zone ~0.5×, average ~1×, strong ~1.5×.
@@ -68,9 +81,9 @@ export function scoreOne({ symbol, timeframe, candles }: ScanInputs): ScannerEnt
       const strengthMult = Math.min(1.5, Math.max(0.5, strength / 5));
       score += Math.round(baseBonus * strengthMult);
       reasons.push(
-        `${touched.type} touched at ${touched.bottom.toFixed(4)}–${touched.top.toFixed(4)}` +
+        `${touched.type} touched at ${fmtPrice(touched.bottom, symbol)}–${fmtPrice(touched.top, symbol)}` +
           ` (strength ${strength.toFixed(1)}, ${touched.pivotCount ?? 1} pivots)` +
-          (touched.flipped ? ' — flipped/role-reversal' : ''),
+          (touched.flipped ? " — flipped/role-reversal" : ""),
       );
       break;
     }
@@ -80,12 +93,21 @@ export function scoreOne({ symbol, timeframe, candles }: ScanInputs): ScannerEnt
   const recentImpulse = impulses[impulses.length - 1];
   if (recentImpulse && candles.length - recentImpulse.index <= 10) {
     score += 15;
-    reasons.push(`recent ${recentImpulse.direction} impulse ${candles.length - recentImpulse.index} bar(s) ago`);
+    reasons.push(
+      `recent ${recentImpulse.direction} impulse ${candles.length - recentImpulse.index} bar(s) ago`,
+    );
   }
 
   if (score === 0) return null;
 
-  return { symbol, timeframe, score, reasons, lastClose: last.close, lastTime: last.time };
+  return {
+    symbol,
+    timeframe,
+    score,
+    reasons,
+    lastClose: last.close,
+    lastTime: last.time,
+  };
 }
 
 /**

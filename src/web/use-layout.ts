@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { Timeframe } from '../shared/types.js';
+import { useEffect, useState } from "react";
+import type { Timeframe } from "../shared/types.js";
 
 export interface CellConfig {
   id: string;
@@ -9,6 +9,16 @@ export interface CellConfig {
   showHtfZones?: boolean;
   /** Render Heikin-Ashi candles instead of raw OHLC. Indicators still run on raw data. */
   heikinAshi?: boolean;
+  /** Hide open-trade ENTRY/SL/TP price lines on the chart (declutter). */
+  hideTrades?: boolean;
+  /** Show S/R zone overlays (default false — toggle to enable). */
+  showZones?: boolean;
+  /** Show Elliott wave labels (default false — toggle to enable). */
+  showWaves?: boolean;
+  /** Show Bollinger Bands overlay (default false). */
+  showBollinger?: boolean;
+  /** Show RSI sub-chart below (default false). */
+  showRsi?: boolean;
 }
 
 export interface GridLayoutConfig {
@@ -25,18 +35,20 @@ export interface NamedLayout {
 export interface LayoutsRoot {
   active: GridLayoutConfig;
   saved: NamedLayout[];
+  /** Layout saved before entering triplet mode — restored on exit. */
+  preTriplet?: GridLayoutConfig;
 }
 
-const STORAGE_KEY = 'trading-app:layout-v2';
-const LEGACY_KEY = 'trading-app:layout-v1';
+const STORAGE_KEY = "trading-app:layout-v2";
+const LEGACY_KEY = "trading-app:layout-v1";
 
 const DEFAULT_LAYOUT: GridLayoutConfig = {
   cols: 2,
   cells: [
-    { id: 'c1', symbol: 'BTCUSDT', timeframe: '5m' },
-    { id: 'c2', symbol: 'ETHUSDT', timeframe: '5m' },
-    { id: 'c3', symbol: 'SOLUSDT', timeframe: '5m' },
-    { id: 'c4', symbol: 'PAXGUSDT', timeframe: '5m' },
+    { id: "c1", symbol: "BTCUSDT", timeframe: "5m" },
+    { id: "c2", symbol: "ETHUSDT", timeframe: "5m" },
+    { id: "c3", symbol: "SOLUSDT", timeframe: "5m" },
+    { id: "c4", symbol: "PAXGUSDT", timeframe: "5m" },
   ],
 };
 
@@ -80,7 +92,9 @@ export function useLayout() {
 
   const layout = root.active;
 
-  const updateActive = (patch: (prev: GridLayoutConfig) => GridLayoutConfig) => {
+  const updateActive = (
+    patch: (prev: GridLayoutConfig) => GridLayoutConfig,
+  ) => {
     setRoot((r) => ({ ...r, active: patch(r.active) }));
   };
 
@@ -96,20 +110,32 @@ export function useLayout() {
       ...prev,
       cells: [
         ...prev.cells,
-        { id: `c${Date.now()}-${Math.floor(Math.random() * 1000)}`, symbol: 'BTCUSDT', timeframe: '5m' },
+        {
+          id: `c${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          symbol: "BTCUSDT",
+          timeframe: "5m",
+        },
       ],
     }));
   };
 
   const removeCell = (id: string) => {
-    updateActive((prev) => ({ ...prev, cells: prev.cells.filter((c) => c.id !== id) }));
+    updateActive((prev) => ({
+      ...prev,
+      cells: prev.cells.filter((c) => c.id !== id),
+    }));
   };
 
   const setCols = (cols: number) => {
     updateActive((prev) => ({ ...prev, cols: Math.max(1, Math.min(6, cols)) }));
   };
 
-  const reset = () => updateActive(() => DEFAULT_LAYOUT);
+  const reset = () =>
+    setRoot((r) => ({
+      ...r,
+      active: r.preTriplet ?? DEFAULT_LAYOUT,
+      preTriplet: undefined,
+    }));
 
   /**
    * Open the active symbol as a 3-cell H1/15m/5m triplet. All three cells
@@ -121,15 +147,35 @@ export function useLayout() {
    * cells. Use a saved preset to come back to the prior layout.
    */
   const openTriplet = (symbol: string) => {
+    const now = Date.now();
     const triplet: GridLayoutConfig = {
       cols: 3,
       cells: [
-        { id: `tr-h1-${Date.now()}`, symbol, timeframe: '1h', showEmas: true, showHtfZones: false },
-        { id: `tr-15m-${Date.now()}`, symbol, timeframe: '15m', showEmas: true, showHtfZones: true },
-        { id: `tr-5m-${Date.now()}`, symbol, timeframe: '5m', showEmas: true, showHtfZones: true },
+        {
+          id: `tr-h1-${now}`,
+          symbol,
+          timeframe: "1h",
+          showEmas: true,
+          showHtfZones: false,
+        },
+        {
+          id: `tr-15m-${now + 1}`,
+          symbol,
+          timeframe: "15m",
+          showEmas: true,
+          showHtfZones: true,
+        },
+        {
+          id: `tr-5m-${now + 2}`,
+          symbol,
+          timeframe: "5m",
+          showEmas: true,
+          showHtfZones: true,
+        },
       ],
     };
-    setRoot((r) => ({ ...r, active: triplet }));
+    // Save current layout so reset() can restore it.
+    setRoot((r) => ({ ...r, active: triplet, preTriplet: r.active }));
   };
 
   // ──────── Named presets ────────

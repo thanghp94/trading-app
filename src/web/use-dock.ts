@@ -8,7 +8,10 @@ export type PanelId =
   | "journal"
   | "alerts"
   | "watchlist"
-  | "chat";
+  | "screener"
+  | "chat"
+  | "market"
+  | "ticker";
 
 /**
  * Single-open dock state. Replaces each panel's private open/expanded flag so

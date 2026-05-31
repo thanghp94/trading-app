@@ -1,6 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
-import type { Candle, Timeframe, Zone } from '../../shared/types.js';
-import type { WaveCount } from '../../shared/indicators/wave-counter.js';
+import Anthropic from "@anthropic-ai/sdk";
+import type { Candle, Timeframe, Zone } from "../../shared/types.js";
+import type { WaveCount } from "../../shared/indicators/wave-counter.js";
+import { fmtPrice } from "../alerts/fmt-price.js";
 
 interface AnalyzeRequest {
   symbol: string;
@@ -21,7 +22,8 @@ export interface AnalyzeResponse {
 let client: Anthropic | null = null;
 function getClient(): Anthropic | null {
   if (!process.env.ANTHROPIC_API_KEY) return null;
-  if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  if (!client)
+    client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   return client;
 }
 
@@ -37,14 +39,16 @@ function getClient(): Anthropic | null {
  * the active wave count + the active zones. Including 1000 raw bars
  * would 10x the cost without adding signal.
  */
-export async function analyzeChart(req: AnalyzeRequest): Promise<AnalyzeResponse> {
+export async function analyzeChart(
+  req: AnalyzeRequest,
+): Promise<AnalyzeResponse> {
   const c = getClient();
-  if (!c) return { ok: false, error: 'ANTHROPIC_API_KEY is not set in .env' };
+  if (!c) return { ok: false, error: "ANTHROPIC_API_KEY is not set in .env" };
 
   const recent = req.candles.slice(-30);
   const last = recent[recent.length - 1];
-  const active = req.zones.filter((z) => z.state === 'active');
-  const broken = req.zones.filter((z) => z.state === 'broken');
+  const active = req.zones.filter((z) => z.state === "active");
+  const broken = req.zones.filter((z) => z.state === "broken");
   const activeWave = req.waves.find((w) => w.active);
 
   const systemPrompt =
@@ -59,33 +63,47 @@ export async function analyzeChart(req: AnalyzeRequest): Promise<AnalyzeResponse
     `Last close: ${last.close} at ${new Date(last.time * 1000).toISOString().slice(0, 16)} UTC\n\n` +
     `Last 30 closed candles (open, high, low, close, vol):\n` +
     recent
-      .map((b) => `${new Date(b.time * 1000).toISOString().slice(0, 16)}: ${b.open} ${b.high} ${b.low} ${b.close} ${Math.round(b.volume)}`)
-      .join('\n') +
+      .map(
+        (b) =>
+          `${new Date(b.time * 1000).toISOString().slice(0, 16)}: ${b.open} ${b.high} ${b.low} ${b.close} ${Math.round(b.volume)}`,
+      )
+      .join("\n") +
     `\n\nActive S/R zones (price-bottom..price-top, type):\n` +
     (active.length === 0
-      ? '(none)'
-      : active.map((z) => `${z.bottom.toFixed(4)}..${z.top.toFixed(4)} ${z.type}${z.flipped ? ' (flipped)' : ''}`).join('\n')) +
+      ? "(none)"
+      : active
+          .map(
+            (z) =>
+              `${fmtPrice(z.bottom, req.symbol)}..${fmtPrice(z.top, req.symbol)} ${z.type}${z.flipped ? " (flipped)" : ""}`,
+          )
+          .join("\n")) +
     `\n\nBroken zones (recently broken — possible role-reversal candidates):\n` +
     (broken.length === 0
-      ? '(none)'
-      : broken.slice(-3).map((z) => `${z.bottom.toFixed(4)}..${z.top.toFixed(4)} was-${z.type}`).join('\n')) +
+      ? "(none)"
+      : broken
+          .slice(-3)
+          .map(
+            (z) =>
+              `${fmtPrice(z.bottom, req.symbol)}..${fmtPrice(z.top, req.symbol)} was-${z.type}`,
+          )
+          .join("\n")) +
     `\n\nActive wave count:\n` +
     (!activeWave
-      ? '(none)'
-      : `${activeWave.direction} setup, points so far: ${activeWave.points.map((p) => `${p.label}@${p.price.toFixed(4)}`).join(' → ')}`) +
+      ? "(none)"
+      : `${activeWave.direction} setup, points so far: ${activeWave.points.map((p) => `${p.label}@${fmtPrice(p.price, req.symbol)}`).join(" → ")}`) +
     `\n\nGive me your read.`;
 
   try {
     const result = await c.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 400,
       system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
+      messages: [{ role: "user", content: userPrompt }],
     });
     const text = result.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
-      .join('\n');
+      .join("\n");
     const inTok = result.usage.input_tokens;
     const outTok = result.usage.output_tokens;
     const costUsd = (inTok / 1_000_000) * 0.8 + (outTok / 1_000_000) * 4;

@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
-export type TradeOutcome = 'open' | 'win' | 'loss' | 'breakeven' | 'cancelled';
+export type TradeOutcome = "open" | "win" | "loss" | "breakeven" | "cancelled";
+export type TradeSource = "alert" | "bot" | "manual";
 
 export interface TradeRow {
   id: string;
   alert_id: string | null;
   symbol: string;
   timeframe: string;
-  direction: 'bull' | 'bear';
+  direction: "bull" | "bear";
   rule: string | null;
+  source: TradeSource;
   entry_price: number;
   sl: number | null;
   tp: number | null;
@@ -32,14 +34,24 @@ export interface JournalStats {
 /** Hook around the journal REST endpoints. Polls every 15s for new trades. */
 export function useJournal() {
   const [trades, setTrades] = useState<TradeRow[]>([]);
-  const [stats, setStats] = useState<JournalStats>({ total: 0, wins: 0, losses: 0, breakeven: 0, open: 0, avgR: 0 });
+  const [stats, setStats] = useState<JournalStats>({
+    total: 0,
+    wins: 0,
+    losses: 0,
+    breakeven: 0,
+    open: 0,
+    avgR: 0,
+  });
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/journal');
-      const json = (await res.json()) as { trades: TradeRow[]; stats: JournalStats };
+      const res = await fetch("/api/journal");
+      const json = (await res.json()) as {
+        trades: TradeRow[];
+        stats: JournalStats;
+      };
       setTrades(json.trades);
       setStats(json.stats);
     } catch {
@@ -50,10 +62,15 @@ export function useJournal() {
   }, []);
 
   const update = useCallback(
-    async (id: string, patch: Partial<Pick<TradeRow, 'sl' | 'tp' | 'exit_price' | 'outcome' | 'notes'>>) => {
+    async (
+      id: string,
+      patch: Partial<
+        Pick<TradeRow, "sl" | "tp" | "exit_price" | "outcome" | "notes">
+      >,
+    ) => {
       const res = await fetch(`/api/journal/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
       if (res.ok) await refresh();

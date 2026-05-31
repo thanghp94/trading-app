@@ -1,17 +1,17 @@
-import WebSocket from 'ws';
-import type { Candle, Timeframe } from '../../shared/types.js';
-import { BaseDataAdapter, type BackfillOptions } from './base-data-adapter.js';
+import WebSocket from "ws";
+import type { Candle, Timeframe, DepthSnapshot } from "../../shared/types.js";
+import { BaseDataAdapter, type BackfillOptions } from "./base-data-adapter.js";
 
-const REST_BASE = 'https://api.binance.com';
-const WS_BASE = 'wss://stream.binance.com:9443/stream';
+const REST_BASE = "https://api.binance.com";
+const WS_BASE = "wss://stream.binance.com:9443/stream";
 
 const TF_TO_BINANCE: Record<Timeframe, string> = {
-  '1m': '1m',
-  '5m': '5m',
-  '15m': '15m',
-  '1h': '1h',
-  '4h': '4h',
-  '1d': '1d',
+  "1m": "1m",
+  "5m": "5m",
+  "15m": "15m",
+  "1h": "1h",
+  "4h": "4h",
+  "1d": "1d",
 };
 
 interface BinanceKlineRest {
@@ -25,20 +25,6 @@ interface BinanceKlineRest {
   6: number;
 }
 
-interface BinanceKlineWs {
-  k: {
-    t: number; // open time ms
-    o: string;
-    h: string;
-    l: string;
-    c: string;
-    v: string;
-    x: boolean; // is closed
-    s: string; // symbol
-    i: string; // interval
-  };
-}
-
 /**
  * Binance public-data adapter — no auth required for kline data.
  * Uses combined WS streams for multi-symbol multiplexing.
@@ -46,7 +32,8 @@ interface BinanceKlineWs {
 export class BinanceAdapter extends BaseDataAdapter {
   private ws: WebSocket | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
-  private subs = new Set<string>(); // `${symbolLower}@kline_${interval}`
+  private subs = new Set<string>(); // `${symbolLower}@kline_${interval}` or depth
+  private lastDepthTs = new Map<string, number>();
 
   async fetchHistorical(opts: BackfillOptions): Promise<Candle[]> {
     const interval = TF_TO_BINANCE[opts.timeframe];
@@ -56,7 +43,7 @@ export class BinanceAdapter extends BaseDataAdapter {
       limit: String(Math.min(opts.limit, 1000)),
     });
     if (opts.sinceSec) {
-      params.set('startTime', String(opts.sinceSec * 1000 + 1));
+      params.set("startTime", String(opts.sinceSec * 1000 + 1));
     }
     const url = `${REST_BASE}/api/v3/klines?${params.toString()}`;
     const res = await fetch(url);
@@ -78,10 +65,14 @@ export class BinanceAdapter extends BaseDataAdapter {
     return candles.filter((c) => this.isValid(c));
   }
 
-  async openLive(streams: Array<{ symbol: string; timeframe: Timeframe }>): Promise<void> {
+  async openLive(
+    streams: Array<{ symbol: string; timeframe: Timeframe }>,
+  ): Promise<void> {
     for (const s of streams) {
-      const key = `${s.symbol.toLowerCase()}@kline_${TF_TO_BINANCE[s.timeframe]}`;
-      this.subs.add(key);
+      const klineKey = `${s.symbol.toLowerCase()}@kline_${TF_TO_BINANCE[s.timeframe]}`;
+      const depthKey = `${s.symbol.toLowerCase()}@depth20@100ms`;
+      this.subs.add(klineKey);
+      this.subs.add(depthKey);
     }
     this.connect();
   }
@@ -92,11 +83,17 @@ export class BinanceAdapter extends BaseDataAdapter {
       this.reconnectTimer = null;
     }
     if (this.ws) {
-      this.ws.removeAllListeners();
-      this.ws.close();
+      const old = this.ws;
       this.ws = null;
+      old.removeAllListeners();
+      old.on("error", () => {});
+      try {
+        old.close();
+      } catch {
+        /* ignore */
+      }
     }
-    this.setState('closed');
+    this.setState("closed");
   }
 
   // Hand-rolled reconnect with exponential backoff + jitter. We could pull
@@ -105,15 +102,20 @@ export class BinanceAdapter extends BaseDataAdapter {
   private reconnectAttempts = 0;
   private connect(): void {
     if (this.subs.size === 0) return;
-    const streams = Array.from(this.subs).join('/');
+    const streams = Array.from(this.subs).join("/");
     const url = `${WS_BASE}?streams=${streams}`;
-    this.setState(this.ws ? 'reconnecting' : 'connecting');
+    this.setState(this.ws ? "reconnecting" : "connecting");
 
     // Close any prior socket cleanly before opening a new one (e.g. when a
     // new subscription is added at runtime — switching timeframes in the UI).
     if (this.ws) {
       const old = this.ws;
+      this.ws = null;
       old.removeAllListeners();
+      // Must add error listener BEFORE close() — closing a CONNECTING socket
+      // emits 'error', and an EventEmitter with no error listener throws
+      // uncaughtException and crashes the process.
+      old.on("error", () => {});
       try {
         old.close();
       } catch {
@@ -124,18 +126,47 @@ export class BinanceAdapter extends BaseDataAdapter {
     const ws = new WebSocket(url);
     this.ws = ws;
 
-    ws.on('open', () => {
+    ws.on("open", () => {
       this.reconnectAttempts = 0;
-      this.setState('live');
+      this.setState("live");
       void this.gapFill();
     });
 
-    ws.on('message', (raw) => {
+    ws.on("message", (raw) => {
       try {
-        const env = JSON.parse(String(raw)) as { stream: string; data: BinanceKlineWs };
+        const env = JSON.parse(String(raw));
+
+        if (env.stream?.includes("@depth")) {
+          const d = env.data;
+          if (!d || !d.bids || !d.asks) return;
+          const symbol = env.stream.split("@")[0].toUpperCase();
+
+          const now = Date.now();
+          const last = this.lastDepthTs.get(symbol) || 0;
+          if (now - last < 500) return; // throttle to 2 updates per second per symbol
+          this.lastDepthTs.set(symbol, now);
+
+          const depth: DepthSnapshot = {
+            symbol,
+            bids: d.bids.map((b: string[]) => [
+              parseFloat(b[0]),
+              parseFloat(b[1]),
+            ]),
+            asks: d.asks.map((a: string[]) => [
+              parseFloat(a[0]),
+              parseFloat(a[1]),
+            ]),
+            timestamp: now,
+          };
+          this.emit("depth", depth);
+          return;
+        }
+
         const k = env.data?.k;
         if (!k) return;
-        const tf = (Object.entries(TF_TO_BINANCE).find(([, v]) => v === k.i)?.[0] ?? null) as Timeframe | null;
+        const tf = (Object.entries(TF_TO_BINANCE).find(
+          ([, v]) => v === k.i,
+        )?.[0] ?? null) as Timeframe | null;
         if (!tf) return;
         const candle: Candle = {
           symbol: k.s,
@@ -150,39 +181,46 @@ export class BinanceAdapter extends BaseDataAdapter {
         };
         this.emitCandle(candle);
       } catch (err) {
-        this.emit('error', err as Error);
+        this.emit("error", err as Error);
       }
     });
 
-    ws.on('close', () => {
+    ws.on("close", () => {
       if (this.reconnectTimer) return;
-      const delay = Math.min(30_000, 500 * 2 ** this.reconnectAttempts) + Math.random() * 250;
+      const delay =
+        Math.min(30_000, 500 * 2 ** this.reconnectAttempts) +
+        Math.random() * 250;
       this.reconnectAttempts += 1;
-      this.setState('reconnecting');
+      this.setState("reconnecting");
       this.reconnectTimer = setTimeout(() => {
         this.reconnectTimer = null;
         this.connect();
       }, delay);
     });
 
-    ws.on('error', (err) => {
-      this.emit('error', err);
+    ws.on("error", (err) => {
+      this.emit("error", err);
     });
   }
 
   /** On reconnect, REST-fetch any bars we may have missed during downtime. */
   private async gapFill(): Promise<void> {
     if (this.lastCandleTs.size === 0) return;
-    this.setState('gap-filling');
+    this.setState("gap-filling");
     for (const [key, sinceSec] of this.lastCandleTs.entries()) {
-      const [symbol, timeframe] = key.split(':') as [string, Timeframe];
+      const [symbol, timeframe] = key.split(":") as [string, Timeframe];
       try {
-        const candles = await this.fetchHistorical({ symbol, timeframe, limit: 200, sinceSec });
+        const candles = await this.fetchHistorical({
+          symbol,
+          timeframe,
+          limit: 200,
+          sinceSec,
+        });
         for (const c of candles) this.emitCandle(c);
       } catch (err) {
-        this.emit('error', err as Error);
+        this.emit("error", err as Error);
       }
     }
-    this.setState('live');
+    this.setState("live");
   }
 }

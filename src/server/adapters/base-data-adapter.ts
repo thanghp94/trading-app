@@ -1,10 +1,11 @@
 import { EventEmitter } from 'node:events';
-import type { AdapterState, Candle, Timeframe } from '../../shared/types.js';
+import type { AdapterState, Candle, Timeframe, DepthSnapshot } from '../../shared/types.js';
 
 export interface AdapterEvents {
   candle: (candle: Candle) => void;
   state: (state: AdapterState) => void;
   error: (err: Error) => void;
+  depth: (depth: DepthSnapshot) => void;
 }
 
 export interface BackfillOptions {

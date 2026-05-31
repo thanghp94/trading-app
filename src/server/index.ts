@@ -19,6 +19,11 @@ import {
 import { resolve } from "node:path";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { AlertEngine } from "./alerts/alert-engine.js";
+import {
+  TelegramGate,
+  formatDigest,
+  gateConfigFromEnv,
+} from "./alerts/telegram-gate.js";
 import { analyzeChart } from "./ai/analyze.js";
 import { registerChatRoute } from "./ai/chat.js";
 import { JournalStore } from "./journal/store.js";
@@ -31,8 +36,12 @@ import {
 import { BacktestRunStore } from "./backtest/run-store.js";
 import { runSweep, type SweepRequest } from "./backtest/sweep.js";
 import { runPortfolio, type PortfolioRequest } from "./backtest/portfolio.js";
+import { runSignalStudy } from "./signal-study/study-engine.js";
 import { rankWatchlist } from "./scanner/watchlist-scanner.js";
 import { WatchlistStore } from "./scanner/watchlist-store.js";
+import { runScreener } from "./screener/run.js";
+import { getUniverse } from "./scanner/universe.js";
+import { EntradeAdapter } from "./adapters/entrade-adapter.js";
 import { checkMtf } from "../shared/indicators/mtf.js";
 import { SubscriberStore } from "./public-feed/subscribers.js";
 import { AutoExecutor } from "./execution/auto-executor.js";
@@ -40,6 +49,7 @@ import { runCouncil } from "./ai/council/orchestrator.js";
 import cron from "node-cron";
 // @ts-ignore — .mjs script has no declaration file
 import { runDailyReport } from "../../scripts/daily-report-service.mjs";
+import { marketDataService } from "./market/market-data-service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 3001);
@@ -152,6 +162,28 @@ if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
 
 const ANALYZE_ON_ALERT = process.env.ANALYZE_ON_ALERT === "true";
 
+// Telegram urgency gate — high-tier alerts interrupt live (throttled per
+// symbol + globally), low-tier alerts batch into a periodic digest so the
+// phone isn't spammed. Flush interval in minutes (default 60).
+const telegramGate = new TelegramGate(gateConfigFromEnv(process.env));
+const DIGEST_INTERVAL_MIN = Number(
+  process.env.TELEGRAM_DIGEST_INTERVAL_MIN ?? 60,
+);
+if (telegramBot) {
+  setInterval(
+    () => {
+      const buffered = telegramGate.drainBuffer();
+      if (buffered.length === 0) return;
+      telegramBot
+        .sendMessage(formatDigest(buffered))
+        .catch((err: any) =>
+          fastify.log.error(err, "[Telegram] digest flush failed"),
+        );
+    },
+    DIGEST_INTERVAL_MIN * 60 * 1000,
+  );
+}
+
 const broadcastAlert = (alert: Alert) => {
   const blocked = riskGuards.check();
   if (blocked) {
@@ -213,7 +245,15 @@ const broadcastAlert = (alert: Alert) => {
   // Gửi Telegram kèm nút bấm nếu thỏa mãn cấu hình Auto-Execute
   if (telegramBot) {
     const isAllowed = autoExecutor.allowedFor?.(alert) ?? true;
-    if (isAllowed) {
+    // Urgency gate: only high-tier alerts interrupt live. Low-tier and
+    // throttled alerts are buffered into the periodic digest instead.
+    const gate = telegramGate.decide(alert);
+    if (gate.action !== "send") {
+      fastify.log.info(
+        `[Telegram] ${gate.action} (${gate.tier}${gate.reason ? "/" + gate.reason : ""}): ${alert.symbol} ${alert.rule}`,
+      );
+    }
+    if (isAllowed && gate.action === "send") {
       const isDerivative = /^VN30F/i.test(alert.symbol);
       const side = alert.direction === "bull" ? "Mua" : "Bán";
 
@@ -576,6 +616,63 @@ fastify.post("/api/backtest/vn", async (req, reply) => {
   }
 });
 
+// Signal study — TCBS-style forward-return event study. Server-fetches DNSE
+// daily candles, runs every buy signal over history, returns avg-return +
+// win-prob matrix per signal + per-signal drilldown detail. Daily-only (MVP).
+fastify.post("/api/signal-study", async (req, reply) => {
+  if (!process.env.DNSE_API_KEY || !process.env.DNSE_API_SECRET) {
+    reply.status(400);
+    return { error: "DNSE_API_KEY and DNSE_API_SECRET not configured in .env" };
+  }
+  const body = req.body as {
+    symbol?: string;
+    fromDate?: string; // YYYY-MM-DD
+    toDate?: string;
+  };
+  const symbol = (body.symbol ?? "").trim().toUpperCase();
+  if (!symbol) {
+    reply.status(400);
+    return { error: "symbol is required" };
+  }
+  const toSec = body.toDate
+    ? Math.floor(new Date(body.toDate).getTime() / 1000) + 86400
+    : Math.floor(Date.now() / 1000);
+  // Default to 5 years of history (TCBS uses ~5y).
+  const fromSec = body.fromDate
+    ? Math.floor(new Date(body.fromDate).getTime() / 1000)
+    : toSec - 5 * 365 * 86400;
+
+  const { DnseAdapter } = await import("./adapters/dnse-adapter.js");
+  const adapter = new DnseAdapter(
+    process.env.DNSE_API_KEY,
+    process.env.DNSE_API_SECRET,
+  );
+  try {
+    const candles = await adapter.fetchHistorical({
+      symbol,
+      timeframe: "1d",
+      limit: 50_000,
+      sinceSec: fromSec,
+    });
+    const filtered = candles.filter(
+      (c) => c.time >= fromSec && c.time <= toSec,
+    );
+    // Need enough history to reach the longest horizon (180) plus indicator warmup.
+    if (filtered.length < 250) {
+      reply.status(400);
+      return {
+        error: `Only ${filtered.length} daily bars in range — need ≥ 250 for the signal study.`,
+      };
+    }
+    return runSignalStudy(symbol, filtered);
+  } catch (e) {
+    reply.status(400);
+    return { error: String(e) };
+  } finally {
+    await adapter.close();
+  }
+});
+
 // Param sweep + walk-forward — grid search over up to 3 axes with optional
 // train/test split. Body provides candles directly (use /api/backtest/vn/sweep
 // for server-fetched DNSE data).
@@ -752,6 +849,23 @@ fastify.get("/api/scan", async () => {
   return rankWatchlist(inputs, 30);
 });
 
+// QMV-style universe screener — scans VN30 / tracked on demand (daily bars),
+// ranks by TA ★. Blackbox columns are display-only (OHLCV proxy). On-demand
+// fetch via keyless Entrade; sequential to respect rate limits.
+fastify.get("/api/screener", async (req) => {
+  const { universe } = req.query as { universe?: string };
+  const symbols = getUniverse(universe === "tracked" ? "tracked" : "vn30");
+  const adapter = new EntradeAdapter();
+  try {
+    const rows = await runScreener(symbols, (s) =>
+      adapter.fetchHistorical({ symbol: s, timeframe: "1d", limit: 400 }),
+    );
+    return { rows, asOf: Date.now(), proxy: true };
+  } finally {
+    await adapter.close();
+  }
+});
+
 // Pinned watchlist — persist symbols across restarts.
 fastify.get("/api/watchlist", async () => watchlistStore.list());
 
@@ -901,12 +1015,107 @@ fastify.register(async (app) => {
 });
 
 const shutdown = async () => {
+  marketDataService.stop();
   await symbolManager.closeAll();
   await fastify.close();
   process.exit(0);
 };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+// ── Market Overview routes (served from in-memory cache, 30s TTL) ──────────
+marketDataService.start();
+
+fastify.get("/api/market/breadth", async (_req, reply) => {
+  const cache = marketDataService.getCache();
+  if (!cache) return reply.status(503).send({ error: "warming up" });
+  return {
+    stocks: cache.stocks,
+    breadth: cache.breadth,
+    updatedAt: cache.updatedAt,
+  };
+});
+
+fastify.get("/api/market/liquidity", async (_req, reply) => {
+  const cache = marketDataService.getCache();
+  if (!cache) return reply.status(503).send({ error: "warming up" });
+  return {
+    today: cache.liquidity.today,
+    yesterday: cache.liquidity.yesterday,
+    updatedAt: cache.updatedAt,
+  };
+});
+
+fastify.get("/api/market/foreign", async (_req, reply) => {
+  const foreign = marketDataService.getForeign();
+  if (!foreign) return reply.status(503).send({ error: "warming up" });
+  return { flows: foreign.flows, updatedAt: foreign.updatedAt };
+});
+
+// ── Ticker detail — per-symbol 1m intraday (30s cache) ──────────────────────
+interface IntradayCandle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+const intradayCache = new Map<
+  string,
+  { candles: IntradayCandle[]; updatedAt: number }
+>();
+const INTRADAY_TTL_MS = 30_000;
+
+fastify.get("/api/ticker/:symbol/intraday", async (req, reply) => {
+  const { symbol } = req.params as { symbol: string };
+  const sym = symbol.toUpperCase();
+  const cached = intradayCache.get(sym);
+  if (cached && Date.now() - cached.updatedAt < INTRADAY_TTL_MS) return cached;
+
+  const now = Math.floor(Date.now() / 1000);
+  const todayStart = now - (now % 86400) + 2 * 3600; // 02:00 UTC = 09:00 ICT
+  const url =
+    `https://services.entrade.com.vn/chart-api/v2/ohlcs/stock` +
+    `?symbol=${sym}&resolution=1&from=${todayStart}&to=${now}`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return reply.status(502).send({ error: "upstream failed" });
+    const json = (await res.json()) as {
+      t?: number[];
+      o?: number[];
+      h?: number[];
+      l?: number[];
+      c?: number[];
+      v?: number[];
+    };
+    const isDerivative = /^VN30F/i.test(sym);
+    const scale = isDerivative ? 1 : 1000;
+    const candles: IntradayCandle[] = (json.t ?? []).map((t, i) => ({
+      time: t,
+      open: (json.o?.[i] ?? 0) * scale,
+      high: (json.h?.[i] ?? 0) * scale,
+      low: (json.l?.[i] ?? 0) * scale,
+      close: (json.c?.[i] ?? 0) * scale,
+      volume: json.v?.[i] ?? 0,
+    }));
+    const entry = { candles, updatedAt: Date.now() };
+    intradayCache.set(sym, entry);
+    return entry;
+  } catch {
+    return reply.status(503).send({ error: "fetch failed" });
+  }
+});
+
+// Node ≥15: unhandled rejections are fatal by default. Log and keep running
+// so a single failed API call or adapter error doesn't kill the dev server.
+process.on("unhandledRejection", (reason) => {
+  fastify.log.error({ reason }, "[process] unhandledRejection — keeping alive");
+});
+process.on("uncaughtException", (err) => {
+  fastify.log.error({ err }, "[process] uncaughtException — exiting");
+  process.exit(1);
+});
 
 try {
   await fastify.listen({ port: PORT, host: "0.0.0.0" });

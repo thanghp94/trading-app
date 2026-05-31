@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Drawer } from "./Drawer.js";
 
 interface ScannerEntry {
   symbol: string;
@@ -9,149 +10,447 @@ interface ScannerEntry {
   lastTime: number;
 }
 
-interface WatchlistPanelProps {
-  onPick?: (symbol: string, timeframe: string) => void;
+interface PinnedSymbol {
+  symbol: string;
+  timeframe: string;
+  addedAt: number;
 }
 
-/**
- * Watchlist scanner — polls /api/scan every 30s, ranks all currently-active
- * server streams by setup quality, surfaces "best setups right now."
- *
- * The server only knows about streams it's actively subscribed to (from
- * ALERT_SYMBOLS or any symbol you've opened in the UI). To scan more
- * symbols, list them in ALERT_SYMBOLS or open them as cells.
- */
-export function WatchlistPanel({ onPick }: WatchlistPanelProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [entries, setEntries] = useState<ScannerEntry[]>([]);
-  const [busy, setBusy] = useState(false);
+interface WatchlistPanelProps {
+  onPick?: (symbol: string, timeframe: string) => void;
+  open: boolean;
+  onClose: () => void;
+  onCount?: (n: number) => void;
+}
 
-  const refresh = async () => {
+const TF_OPTIONS = ["1d", "1h", "15m", "5m"];
+
+/**
+ * Watchlist panel with two sections:
+ * - Pinned symbols (persistent, managed via /api/watchlist)
+ * - Live scanner (auto-scored, polls every 30s)
+ */
+export function WatchlistPanel({
+  onPick,
+  open,
+  onClose,
+  onCount,
+}: WatchlistPanelProps) {
+  const [entries, setEntries] = useState<ScannerEntry[]>([]);
+  const [pinned, setPinned] = useState<PinnedSymbol[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [input, setInput] = useState("");
+  const [tf, setTf] = useState("1d");
+  const [expanded, setExpanded] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // ── fetch live scanner ───────────────────────────────────────────
+  const refreshScan = useCallback(async () => {
     setBusy(true);
     try {
-      const res = await fetch('/api/scan');
-      const json = (await res.json()) as ScannerEntry[];
-      setEntries(json);
+      const res = await fetch("/api/scan");
+      setEntries((await res.json()) as ScannerEntry[]);
     } catch {
       /* ignore */
     } finally {
       setBusy(false);
     }
-  };
-
-  useEffect(() => {
-    void refresh();
-    const id = window.setInterval(refresh, 30_000);
-    return () => window.clearInterval(id);
   }, []);
 
-  return (
-    <div style={wrapStyle}>
-      <button
-        type="button"
-        onClick={() => setExpanded((e) => !e)}
-        style={{ ...headerBtnStyle, background: entries.length > 0 ? '#26a69a' : '#161b22' }}
-      >
-        🎯 Watchlist {entries.length > 0 && `(${entries.length})`} {expanded ? '▾' : '▸'}
-      </button>
-      {expanded && (
-        <div style={panelStyle}>
-          <div style={headerRowStyle}>
-            <span style={{ color: '#8b949e' }}>Top setups · ranked by score</span>
-            <button type="button" onClick={refresh} style={refreshBtnStyle}>
-              {busy ? '↻' : 'refresh'}
-            </button>
+  // ── fetch pinned list ────────────────────────────────────────────
+  const refreshPinned = useCallback(async () => {
+    try {
+      const res = await fetch("/api/watchlist");
+      setPinned((await res.json()) as PinnedSymbol[]);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshScan();
+    void refreshPinned();
+    const id = window.setInterval(refreshScan, 30_000);
+    return () => window.clearInterval(id);
+  }, [refreshScan, refreshPinned]);
+
+  useEffect(() => {
+    onCount?.(pinned.length + entries.length);
+  }, [pinned, entries, onCount]);
+
+  // ── add symbols ──────────────────────────────────────────────────
+  const addSymbols = async () => {
+    const raw = input.trim();
+    if (!raw) return;
+    setAdding(true);
+    setAddError(null);
+    setInput("");
+    try {
+      const res = await fetch("/api/watchlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols: raw, timeframe: tf }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as {
+          message?: string;
+        };
+        setAddError(err.message ?? `Error ${res.status}`);
+        return;
+      }
+      // Use the POST response (full updated list) directly — no second round-trip.
+      setPinned((await res.json()) as PinnedSymbol[]);
+    } catch (e) {
+      setAddError(String(e));
+    } finally {
+      setAdding(false);
+      inputRef.current?.focus();
+    }
+  };
+
+  const removePin = async (symbol: string) => {
+    await fetch(`/api/watchlist/${symbol}`, { method: "DELETE" });
+    void refreshPinned();
+  };
+
+  const expandBtn = (
+    <button
+      type="button"
+      onClick={() => setExpanded((e) => !e)}
+      style={expandBtnStyle}
+      title={expanded ? "Collapse to drawer" : "Expand to full screen"}
+    >
+      {expanded ? "⊡" : "⛶"}
+    </button>
+  );
+
+  const body = (
+    <>
+      {/* ── Add row ──────────────────────────────────────────────── */}
+      <div style={sectionStyle}>
+        <div style={addRowStyle}>
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Pin symbols: HPG, VCB, FPT"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void addSymbols();
+            }}
+            style={inputStyle}
+          />
+          <select
+            value={tf}
+            onChange={(e) => setTf(e.target.value)}
+            style={tfStyle}
+          >
+            {TF_OPTIONS.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => void addSymbols()}
+            disabled={adding}
+            style={{ ...addBtnStyle, opacity: adding ? 0.6 : 1 }}
+          >
+            {adding ? "…" : "Pin"}
+          </button>
+        </div>
+        {addError && <div style={errorStyle}>{addError}</div>}
+      </div>
+
+      {/* ── Scanner section ───────────────────────────────────────── */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <span style={sectionLabelStyle}>Live scanner · top setups</span>
+          <button type="button" onClick={refreshScan} style={refreshBtnStyle}>
+            {busy ? "↻" : "refresh"}
+          </button>
+        </div>
+        {entries.length === 0 ? (
+          <div style={emptyStyle}>
+            No setups scored yet. Pinned symbols appear here within ~30s.
           </div>
-          {entries.length === 0 ? (
-            <div style={emptyStyle}>
-              No setups detected. Add symbols to <code>ALERT_SYMBOLS</code> in <code>.env</code> or open more cells in the grid so the server can monitor them.
-            </div>
-          ) : (
-            entries.map((e) => (
+        ) : (
+          entries.map((e) => {
+            const isPinned = pinned.some((p) => p.symbol === e.symbol);
+            return (
               <div
                 key={`${e.symbol}-${e.timeframe}`}
                 style={rowStyle}
                 onClick={() => onPick?.(e.symbol, e.timeframe)}
-                title={onPick ? 'Click to swap into the first chart cell' : undefined}
+                title={onPick ? "Click to load in first chart" : undefined}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <span style={{ fontSize: 12, color: '#c9d1d9' }}>
+                <div style={rowHeaderStyle}>
+                  <span style={{ fontSize: 12, color: "#c9d1d9" }}>
                     <b>{e.symbol}</b> {e.timeframe} · {e.lastClose}
+                    {isPinned && (
+                      <span style={pinnedDotStyle} title="Pinned">
+                        📌
+                      </span>
+                    )}
                   </span>
-                  <span style={scoreStyle}>{e.score}</span>
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    <span style={scoreStyle}>{e.score}</span>
+                    {isPinned ? (
+                      <button
+                        type="button"
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          void removePin(e.symbol);
+                        }}
+                        style={unpinBtnStyle}
+                        title="Unpin"
+                      >
+                        ×
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={async (ev) => {
+                          ev.stopPropagation();
+                          setAdding(true);
+                          try {
+                            const res = await fetch("/api/watchlist", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                symbols: e.symbol,
+                                timeframe: e.timeframe,
+                              }),
+                            });
+                            if (res.ok)
+                              setPinned((await res.json()) as PinnedSymbol[]);
+                          } finally {
+                            setAdding(false);
+                          }
+                        }}
+                        style={pinRowBtnStyle}
+                        title="Pin this symbol"
+                      >
+                        📌
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <ul style={{ margin: '4px 0 0', padding: '0 0 0 16px', fontSize: 10, color: '#8b949e', listStyle: 'disc' }}>
+                <ul style={reasonsStyle}>
                   {e.reasons.map((r, i) => (
                     <li key={i}>{r}</li>
                   ))}
                 </ul>
               </div>
-            ))
-          )}
+            );
+          })
+        )}
+      </div>
+    </>
+  );
+
+  if (expanded) {
+    return (
+      <div style={fullPageStyle}>
+        <div style={fullPageInnerStyle}>
+          <div style={fullPageHeaderStyle}>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>🎯 Watchlist</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              {expandBtn}
+              <button
+                type="button"
+                onClick={onClose}
+                style={closeStyle}
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <div style={fullPageBodyStyle}>{body}</div>
         </div>
-      )}
-    </div>
+      </div>
+    );
+  }
+
+  return (
+    <Drawer
+      open={open}
+      title="🎯 Watchlist"
+      hint="Pin symbols to monitor permanently. Live scanner scores all monitored streams."
+      onClose={onClose}
+      width={380}
+      extraHeaderContent={expandBtn}
+    >
+      {body}
+    </Drawer>
   );
 }
 
-const wrapStyle: React.CSSProperties = {
-  position: 'fixed',
-  right: 12,
-  top: 12,
-  width: 340,
-  zIndex: 99,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 4,
-  pointerEvents: 'none',
+const sectionStyle: React.CSSProperties = {
+  padding: "10px 12px",
+  borderBottom: "1px solid var(--border-color)",
 };
-const headerBtnStyle: React.CSSProperties = {
-  alignSelf: 'flex-end',
-  padding: '6px 12px',
-  fontSize: 12,
-  fontFamily: 'inherit',
-  border: '1px solid #30363d',
-  borderRadius: 4,
-  color: '#fff',
-  cursor: 'pointer',
-  pointerEvents: 'auto',
+const sectionLabelStyle: React.CSSProperties = {
+  fontSize: 10,
+  color: "var(--text-muted)",
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
+  marginBottom: 8,
 };
-const panelStyle: React.CSSProperties = {
-  background: '#0d1117',
-  border: '1px solid #30363d',
-  borderRadius: 4,
-  padding: 8,
-  maxHeight: '70vh',
-  overflowY: 'auto',
-  pointerEvents: 'auto',
-  boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+const sectionHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 8,
 };
-const headerRowStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
+const addRowStyle: React.CSSProperties = {
+  display: "flex",
+  gap: 6,
+  marginBottom: 8,
+};
+const inputStyle: React.CSSProperties = {
+  flex: 1,
   fontSize: 11,
-  paddingBottom: 6,
-  marginBottom: 6,
-  borderBottom: '1px solid #161b22',
+  fontFamily: "inherit",
+  background: "var(--bg-panel-solid)",
+  color: "var(--text-main)",
+  border: "1px solid var(--border-solid)",
+  borderRadius: 4,
+  padding: "5px 8px",
+};
+const tfStyle: React.CSSProperties = {
+  fontSize: 11,
+  fontFamily: "inherit",
+  background: "var(--bg-panel-solid)",
+  color: "var(--text-main)",
+  border: "1px solid var(--border-solid)",
+  borderRadius: 4,
+  padding: "5px 4px",
+};
+const addBtnStyle: React.CSSProperties = {
+  padding: "5px 12px",
+  fontSize: 11,
+  fontFamily: "inherit",
+  background: "var(--accent)",
+  color: "#000",
+  border: "none",
+  borderRadius: 4,
+  fontWeight: 600,
+  cursor: "pointer",
 };
 const refreshBtnStyle: React.CSSProperties = {
   fontSize: 10,
-  background: 'transparent',
-  border: '1px solid #30363d',
+  background: "transparent",
+  border: "1px solid var(--border-solid)",
   borderRadius: 3,
-  color: '#8b949e',
-  padding: '2px 6px',
-  cursor: 'pointer',
+  color: "var(--text-muted)",
+  padding: "2px 6px",
+  cursor: "pointer",
 };
 const rowStyle: React.CSSProperties = {
-  padding: '6px 4px',
-  borderBottom: '1px solid #161b22',
-  cursor: 'pointer',
+  padding: "6px 4px",
+  borderBottom: "1px solid var(--border-color)",
+  cursor: "pointer",
+};
+const rowHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "baseline",
 };
 const scoreStyle: React.CSSProperties = {
   fontSize: 11,
   fontWeight: 700,
-  color: '#26a69a',
+  color: "#26a69a",
 };
-const emptyStyle: React.CSSProperties = { fontSize: 11, color: '#8b949e', padding: 12, lineHeight: 1.5 };
+const reasonsStyle: React.CSSProperties = {
+  margin: "4px 0 0",
+  padding: "0 0 0 16px",
+  fontSize: 10,
+  color: "#8b949e",
+  listStyle: "disc",
+};
+const emptyStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: "var(--text-muted)",
+  lineHeight: 1.5,
+};
+const errorStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: "var(--bear)",
+  marginBottom: 6,
+};
+const pinnedDotStyle: React.CSSProperties = { marginLeft: 4, fontSize: 10 };
+const unpinBtnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "1px solid var(--border-solid)",
+  borderRadius: 3,
+  color: "var(--text-muted)",
+  fontSize: 12,
+  padding: "1px 5px",
+  cursor: "pointer",
+  lineHeight: 1,
+};
+const pinRowBtnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "none",
+  fontSize: 11,
+  padding: "1px 3px",
+  cursor: "pointer",
+  opacity: 0.4,
+};
+const expandBtnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "none",
+  color: "var(--text-muted)",
+  cursor: "pointer",
+  fontSize: 16,
+  lineHeight: 1,
+  padding: 4,
+};
+const closeStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "none",
+  color: "var(--text-muted)",
+  cursor: "pointer",
+  fontSize: 14,
+  lineHeight: 1,
+  padding: 4,
+};
+const fullPageStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 200,
+  background: "rgba(0,0,0,0.7)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+const fullPageInnerStyle: React.CSSProperties = {
+  background: "var(--bg-base)",
+  border: "1px solid var(--border-solid)",
+  borderRadius: 8,
+  width: "min(900px, 95vw)",
+  height: "85vh",
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
+  boxShadow: "0 8px 40px rgba(0,0,0,0.6)",
+};
+const fullPageHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  padding: "12px 16px",
+  borderBottom: "1px solid var(--border-color)",
+  flexShrink: 0,
+};
+const fullPageBodyStyle: React.CSSProperties = {
+  overflowY: "auto",
+  flex: 1,
+};
