@@ -28,8 +28,11 @@ correct upstream sources + absorbs endpoint drift. No standing service (rejected
   source in vnstock 4.0.4). See `phase-04-ownership.md`.
 - **PHASE 3 (Phase 05, in progress):** dividend / corporate-action calendar from
   `Company.events()` (DIV/ISS/AGME/AIS/director-deal announcements). See `phase-05-…md`.
-- **OUT (future phases):** fundamental screener, council `analystFundamental` wiring,
-  insider-deal detail table (needs paid/alt source).
+- **PHASE 4 (Phase 06, in progress):** fundamental screener — augment existing `/api/screener` +
+  `ScreenerPanel` with P/E/P/B/ROE/mcap columns + filters + composite value score; pre-warm
+  tracked-universe fundamentals nightly. See `phase-06-fundamental-screener.md`.
+- **OUT (future phases):** council `analystFundamental` wiring, insider-deal detail table
+  (needs paid/alt source).
 
 ## Prerequisite
 
@@ -57,6 +60,7 @@ commits before this work starts. Tracked separately; not part of these phases.
 | 03 | REST Route + TickerDetailPanel Tabs | Done | 02 |
 | 04 | Ownership (shareholders + officers + structure) | Done | 03 |
 | 05 | Dividend / corp-action calendar | Done | 04 |
+| 06 | Fundamental screener (augment existing) | Done | 01 |
 
 ## Key risks
 
@@ -164,3 +168,18 @@ Implemented dividend/corp-action calendar. 113/113 tests pass, tsc clean (server
 - Nightly cron + Docker now cover all three domains (fundamentals, ownership, corp-actions).
 - Note: director-deal *announcement events* surface in the calendar; the dedicated insider-deal
   detail table remains unavailable (unchanged from Phase 4).
+
+### Session 5 — Build Phase 06 Fundamental Screener (2026-05-31)
+
+Augmented existing screener with fundamentals. 122/122 tests pass, tsc clean (server + web). Review: **SHIP**.
+
+- Decisions (user): augment existing `/api/screener` + `ScreenerPanel` (not standalone); pre-warm
+  **tracked (~90)** universe fundamentals nightly; standard value set (P/E/P/B/ROE/mcap) + composite valueScore.
+- New: `screener/fundamental-filter.ts` — pure `computeValueScore` (0-100 heuristic: ROE .4, P/E .3,
+  P/B .2, divYield .1), `toScreenerFundamentals`, `enrichRows` (cache-only attach, NO inline spawn → scan latency unchanged).
+- `ScreenerRow` gains optional `fundamentals?` (backward-compatible). `/api/screener` enriches from
+  `fundamentalsStore` cache. ScreenerPanel: 5 columns (P/E/P/B/ROE/Vốn hóa/Điểm GT) + 4 chips
+  (P/E≤15, P/B≤2, ROE≥15%, Có cổ tức) + "Sắp: ★/Giá trị" sort toggle.
+- **Cron change:** fundamentals now pre-warm `tracked ∪ watchlist` (~90); ownership/corp-actions stay
+  watchlist. Verified empty-watchlist still pre-warms fundamentals, skips the per-ticker domains.
+- valueScore documented as a value-tilt heuristic (not predictive), footer caveat in UI.

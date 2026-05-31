@@ -54,4 +54,21 @@ export interface ScreenerRow {
   reasons: string[];
   /** Bar time of the latest candle (unix sec). */
   asOf: number;
+  /** Fundamentals attached from the nightly cache (absent when not cached). */
+  fundamentals?: ScreenerFundamentals;
+}
+
+/**
+ * Fundamentals columns for the screener, attached from the cache (never fetched
+ * inline). `valueScore` is a heuristic value-tilt (0-100), not a predictive signal.
+ */
+export interface ScreenerFundamentals {
+  pe: number | null;
+  pb: number | null;
+  roe: number | null;
+  eps: number | null;
+  marketCap: number | null;
+  dividendYield: number | null;
+  /** Composite value score 0-100 (low P/E·P/B, high ROE·yield), or null if no inputs. */
+  valueScore: number | null;
 }

@@ -45,15 +45,47 @@ const CHIPS: {
       r.signals.divergence === "bullish" ||
       r.signals.divergence === "hidden-bullish",
   },
+  // Fundamental chips — a row without cached fundamentals fails an active one.
+  {
+    id: "peLow",
+    label: "P/E≤15",
+    test: (r) => (r.fundamentals?.pe ?? Infinity) <= 15,
+  },
+  {
+    id: "pbLow",
+    label: "P/B≤2",
+    test: (r) => (r.fundamentals?.pb ?? Infinity) <= 2,
+  },
+  {
+    id: "roeHigh",
+    label: "ROE≥15%",
+    test: (r) => (r.fundamentals?.roe ?? -Infinity) >= 0.15,
+  },
+  {
+    id: "div",
+    label: "Có cổ tức",
+    test: (r) => (r.fundamentals?.dividendYield ?? 0) > 0,
+  },
 ];
 
 const stars = (n: number) => "★".repeat(n) + "☆".repeat(5 - n);
+
+const DASH = "—";
+const fmtRatio = (v: number | null | undefined) =>
+  v == null ? DASH : v.toFixed(2);
+const fmtPct = (v: number | null | undefined) =>
+  v == null ? DASH : `${(v * 100).toFixed(1)}%`;
+const fmtBillions = (v: number | null | undefined) =>
+  v == null
+    ? DASH
+    : `${(v / 1e9).toLocaleString("vi-VN", { maximumFractionDigits: 0 })}`;
 
 export function ScreenerPanel({ open, onClose, onPick }: ScreenerPanelProps) {
   const [rows, setRows] = useState<ScreenerRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [universe, setUniverse] = useState<UniverseName>("vn30");
   const [active, setActive] = useState<Set<string>>(new Set());
+  const [sortByValue, setSortByValue] = useState(false);
 
   const refresh = useCallback(async () => {
     setBusy(true);
@@ -85,6 +117,16 @@ export function ScreenerPanel({ open, onClose, onPick }: ScreenerPanelProps) {
     [...active].every((id) => CHIPS.find((c) => c.id === id)?.test(r) ?? true),
   );
 
+  // Default order is server's ★/score. Optional client sort by composite value
+  // score (rows without a score sort last).
+  const displayed = sortByValue
+    ? [...filtered].sort(
+        (a, b) =>
+          (b.fundamentals?.valueScore ?? -1) -
+          (a.fundamentals?.valueScore ?? -1),
+      )
+    : filtered;
+
   return (
     <div style={overlayStyle}>
       <div style={modalStyle}>
@@ -99,6 +141,17 @@ export function ScreenerPanel({ open, onClose, onPick }: ScreenerPanelProps) {
               <option value="vn30">VN30</option>
               <option value="tracked">Tracked (~90)</option>
             </select>
+            <button
+              type="button"
+              onClick={() => setSortByValue((v) => !v)}
+              style={{
+                ...refreshBtnStyle,
+                ...(sortByValue ? chipActiveStyle : {}),
+              }}
+              title="Sắp xếp theo điểm giá trị (cơ bản)"
+            >
+              {sortByValue ? "Sắp: Giá trị" : "Sắp: ★"}
+            </button>
             <button
               type="button"
               onClick={() => void refresh()}
@@ -159,6 +212,11 @@ export function ScreenerPanel({ open, onClose, onPick }: ScreenerPanelProps) {
                     "Xu hướng",
                     "Tín hiệu KT",
                     "Blackbox (proxy)",
+                    "P/E",
+                    "P/B",
+                    "ROE",
+                    "Vốn hóa (tỷ)",
+                    "Điểm GT",
                   ].map((h) => (
                     <th key={h} style={thStyle}>
                       {h}
@@ -167,7 +225,7 @@ export function ScreenerPanel({ open, onClose, onPick }: ScreenerPanelProps) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {displayed.map((r) => (
                   <tr
                     key={r.symbol}
                     style={trStyle}
@@ -206,6 +264,15 @@ export function ScreenerPanel({ open, onClose, onPick }: ScreenerPanelProps) {
                     >
                       {bbBadges(r)}
                     </td>
+                    <td style={tdNumStyle}>{fmtRatio(r.fundamentals?.pe)}</td>
+                    <td style={tdNumStyle}>{fmtRatio(r.fundamentals?.pb)}</td>
+                    <td style={tdNumStyle}>{fmtPct(r.fundamentals?.roe)}</td>
+                    <td style={tdNumStyle}>
+                      {fmtBillions(r.fundamentals?.marketCap)}
+                    </td>
+                    <td style={{ ...tdNumStyle, fontWeight: 600 }}>
+                      {r.fundamentals?.valueScore ?? DASH}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -214,7 +281,9 @@ export function ScreenerPanel({ open, onClose, onPick }: ScreenerPanelProps) {
         </div>
         <div style={footerStyle}>
           ★ ranks on technicals. Blackbox column is a display-only OHLCV proxy
-          (failed predictive gate) — context, not signal.
+          (failed predictive gate) — context, not signal. P/E·P/B·ROE·Vốn hóa từ
+          cache vnstock (làm mới hàng đêm); Điểm GT là thước đo giá trị
+          heuristic.
         </div>
       </div>
     </div>

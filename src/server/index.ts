@@ -48,6 +48,7 @@ import { fetchOwnership } from "./fundamentals/ownership-client.js";
 import { fetchCorpActions } from "./fundamentals/corp-action-client.js";
 import { registerSymbolCacheRoute } from "./fundamentals/route.js";
 import { runScreener } from "./screener/run.js";
+import { enrichRows } from "./screener/fundamental-filter.js";
 import { getUniverse } from "./scanner/universe.js";
 import { EntradeAdapter } from "./adapters/entrade-adapter.js";
 import { checkMtf } from "../shared/indicators/mtf.js";
@@ -99,32 +100,36 @@ const riskGuards = new RiskGuards(journal);
 // Fundamentals/ownership cache TTL: one trading day. Refreshed nightly + on cache-miss.
 const FUNDAMENTALS_TTL_SEC = 24 * 3600;
 
-// Nightly refresh for the watchlist (after VN close + daily digest).
+// Nightly refresh (after VN close + daily digest). Fundamentals pre-warm the whole
+// scannable (tracked) universe so the screener reads cache instantly; ownership +
+// corp-actions only cover the watchlist (per-ticker tabs, fine on-demand otherwise).
 cron.schedule("30 16 * * 1-5", () => {
-  const symbols = watchlistStore.list().map((w) => w.symbol);
-  if (symbols.length === 0) return;
+  const watchlist = watchlistStore.list().map((w) => w.symbol);
   const cronLogger = {
     info: (m: string) => fastify.log.info(m),
     warn: (m: string) => fastify.log.warn(m),
   };
+  // Fundamentals: tracked universe ∪ watchlist (dedup), so screener coverage is warm.
+  const fundUniverse = [...new Set([...getUniverse("tracked"), ...watchlist])];
   fastify.log.info(
-    `[cron] Refresh fundamentals + ownership cho ${symbols.length} mã watchlist...`,
+    `[cron] Pre-warm fundamentals cho ${fundUniverse.length} mã (tracked ∪ watchlist)...`,
   );
-  refreshSymbols(symbols, fundamentalsStore, {
+  refreshSymbols(fundUniverse, fundamentalsStore, {
     fetcher: fetchFundamentals,
     logger: cronLogger,
     label: "fundamentals",
   }).catch((err: unknown) =>
     fastify.log.error(err, "[cron] Lỗi refresh fundamentals"),
   );
-  refreshSymbols(symbols, ownershipStore, {
+  if (watchlist.length === 0) return;
+  refreshSymbols(watchlist, ownershipStore, {
     fetcher: fetchOwnership,
     logger: cronLogger,
     label: "ownership",
   }).catch((err: unknown) =>
     fastify.log.error(err, "[cron] Lỗi refresh ownership"),
   );
-  refreshSymbols(symbols, corpActionStore, {
+  refreshSymbols(watchlist, corpActionStore, {
     fetcher: fetchCorpActions,
     logger: cronLogger,
     label: "corp-actions",
@@ -908,7 +913,9 @@ fastify.get("/api/screener", async (req) => {
     const rows = await runScreener(symbols, (s) =>
       adapter.fetchHistorical({ symbol: s, timeframe: "1d", limit: 400 }),
     );
-    return { rows, asOf: Date.now(), proxy: true };
+    // Attach fundamentals from the nightly cache (no inline fetch — keeps scan fast).
+    const enriched = enrichRows(rows, (s) => fundamentalsStore.get(s));
+    return { rows: enriched, asOf: Date.now(), proxy: true };
   } finally {
     await adapter.close();
   }
