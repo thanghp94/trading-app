@@ -27,8 +27,9 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=build /app/dist ./dist
-# The python CLI script is read at runtime (not bundled by tsc/vite).
+# The python CLI scripts are read at runtime (not bundled by tsc/vite).
 COPY scripts/vnstock-fundamentals.py ./scripts/vnstock-fundamentals.py
+COPY scripts/vnstock-ownership.py ./scripts/vnstock-ownership.py
 
 # Persist SQLite + any future state under /data so a docker volume mount
 # survives image rebuilds.

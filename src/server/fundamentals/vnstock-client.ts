@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
 import path from "node:path";
+import { spawnPythonJson } from "./python-runner.js";
 import type {
   Fundamentals,
   RawFundamentals,
@@ -18,7 +18,6 @@ export class VnstockError extends Error {
   }
 }
 
-const PYTHON_BIN = process.env.PYTHON_BIN ?? "python3";
 const SCRIPT_PATH =
   process.env.VNSTOCK_SCRIPT ??
   path.resolve(process.cwd(), "scripts/vnstock-fundamentals.py");
@@ -26,29 +25,14 @@ const SCRIPT_PATH =
 /** Runs the python script and resolves its raw stdout. Injectable for tests. */
 export type ScriptRunner = (symbol: string) => Promise<string>;
 
-const defaultRunner: ScriptRunner = (symbol) =>
-  new Promise((resolve, reject) => {
-    const proc = spawn(PYTHON_BIN, [SCRIPT_PATH, symbol], {
-      timeout: 30_000,
-    });
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
-    proc.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
-    proc.on("error", (err) => reject(err));
-    proc.on("close", (code) => {
-      if (code !== 0) {
-        reject(
-          new VnstockError(
-            `python exited ${code}: ${stderr.trim() || "no stderr"}`,
-            symbol,
-          ),
-        );
-        return;
-      }
-      resolve(stdout);
-    });
-  });
+const defaultRunner: ScriptRunner = async (symbol) => {
+  try {
+    return await spawnPythonJson(SCRIPT_PATH, symbol);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new VnstockError(msg, symbol);
+  }
+};
 
 function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;

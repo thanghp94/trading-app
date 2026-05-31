@@ -1,0 +1,191 @@
+{
+  "structure": {
+    "foreignPct": 0.28466837,
+    "statePct": 0.05669811,
+    "freeFloatPct": 0.8499999995
+  },
+  "shareholders": [
+    {
+      "name": "Trương Gia Bình",
+      "quantity": 117347966.0,
+      "pct": 0.0689,
+      "asOf": "2026-02-03T10:36:48.587"
+    },
+    {
+      "name": "Tổng Công ty Đầu Tư Và Kinh Doanh Vốn Nhà Nước - Công ty TNHH",
+      "quantity": 96585637.0,
+      "pct": 0.0567,
+      "asOf": "2026-04-06T16:53:49.03"
+    },
+    {
+      "name": "Công ty TNHH QT",
+      "quantity": 54303923.0,
+      "pct": 0.0369,
+      "asOf": "2025-10-05T12:54:27.52"
+    },
+    {
+      "name": "Deutsche Bank Aktiengesellchaft, London Branch",
+      "quantity": 9604598.0,
+      "pct": 0.0241605875,
+      "asOf": "2015-06-15T00:00:00"
+    },
+    {
+      "name": "Vinacapital Vietnam Opportunity Fund Ltd.",
+      "quantity": 22791922.0,
+      "pct": 0.0155,
+      "asOf": "2025-10-05T12:54:27.52"
+    },
+    {
+      "name": "Bùi Quang Ngọc",
+      "quantity": 25255715.0,
+      "pct": 0.0148,
+      "asOf": "2026-02-03T10:36:48.613"
+    },
+    {
+      "name": "Trương Thị Thanh Thanh",
+      "quantity": 21822466.0,
+      "pct": 0.0147,
+      "asOf": "2025-10-05T12:54:27.52"
+    },
+    {
+      "name": "Hoàng Minh Châu",
+      "quantity": 5610790.0,
+      "pct": 0.0141169968,
+      "asOf": "2015-09-14T00:00:00"
+    },
+    {
+      "name": "Phan Ngô Tống Hưng",
+      "quantity": 5344531.0,
+      "pct": 0.0134470773,
+      "asOf": "2015-09-14T00:00:00"
+    },
+    {
+      "name": "Schroder International Selection Fund",
+      "quantity": 19460017.0,
+      "pct": 0.0132,
+      "asOf": "2025-10-05T12:54:27.52"
+    },
+    {
+      "name": "Macquarie Bank Limited Obu",
+      "quantity": 17107235.0,
+      "pct": 0.0116,
+      "asOf": "2025-10-05T12:54:27.52"
+    },
+    {
+      "name": "Vietnam Holding Ltd",
+      "quantity": 8557812.0,
+      "pct": 0.0109168978,
+      "asOf": "2020-07-14T15:05:24.437"
+    },
+    {
+      "name": "Ntasian Discovery Master Fund",
+      "quantity": 16000000.0,
+      "pct": 0.0109,
+      "asOf": "2025-10-05T12:54:27.52"
+    },
+    {
+      "name": "Government Of Singapore",
+      "quantity": 15162887.0,
+      "pct": 0.0103,
+      "asOf": "2025-10-05T12:54:27.52"
+    },
+    {
+      "name": "Nguyễn Thành Nam",
+      "quantity": 3747323.0,
+      "pct": 0.009428431,
+      "asOf": "2015-09-14T00:00:00"
+    },
+    {
+      "name": "Đỗ Cao Bảo",
+      "quantity": 15868500.0,
+      "pct": 0.0093,
+      "asOf": "2026-02-03T10:36:48.637"
+    },
+    {
+      "name": "Vietnam Equity Holding",
+      "quantity": 3636506.0,
+      "pct": 0.0091477146,
+      "asOf": "2015-06-15T00:00:00"
+    },
+    {
+      "name": "Vietnam Dragon Fund Limited",
+      "quantity": 3589550.0,
+      "pct": 0.0090295957,
+      "asOf": "2015-06-15T00:00:00"
+    },
+    {
+      "name": "Vietnam Enterprise Investments Limited",
+      "quantity": 9710183.0,
+      "pct": 0.007646,
+      "asOf": "2025-10-05T12:54:27.52"
+    },
+    {
+      "name": "Lê Quang Tiến",
+      "quantity": 2500001.0,
+      "pct": 0.0062901135,
+      "asOf": "2015-09-14T00:00:00"
+    }
+  ],
+  "officers": [
+    {
+      "name": "Trương Gia Bình",
+      "position": "Chủ tịch Hội đồng Quản trị",
+      "quantity": 117347966.0,
+      "pct": 0.0689
+    },
+    {
+      "name": "Bùi Quang Ngọc",
+      "position": "Phó Chủ tịch Hội đồng Quản trị",
+      "quantity": 25255715.0,
+      "pct": 0.0148
+    },
+    {
+      "name": "Đỗ Cao Bảo",
+      "position": "Thành viên Hội đồng Quản trị",
+      "quantity": 15868500.0,
+      "pct": 0.0093
+    },
+    {
+      "name": "Nguyễn Thế Phương",
+      "position": "Phó Tổng Giám đốc/Người phụ trách quản trị công ty",
+      "quantity": 6103794.0,
+      "pct": 0.0036
+    },
+    {
+      "name": "Nguyễn Văn Khoa",
+      "position": "Tổng Giám đốc",
+      "quantity": 5414610.0,
+      "pct": 0.0032
+    },
+    {
+      "name": "Phạm Minh Tuấn",
+      "position": "Phó Tổng Giám đốc",
+      "quantity": 2957848.0,
+      "pct": 0.0017
+    },
+    {
+      "name": "Nguyễn Khải Hoàn",
+      "position": "Thành viên Ban kiểm soát",
+      "quantity": 2497204.0,
+      "pct": 0.0015
+    },
+    {
+      "name": "Hoàng Hữu Chiến",
+      "position": "Kế toán trưởng",
+      "quantity": 938707.0,
+      "pct": 0.0006
+    },
+    {
+      "name": "Nguyễn Việt Thắng",
+      "position": "Trưởng Ban kiểm soát",
+      "quantity": 156451.0,
+      "pct": 0.0001
+    },
+    {
+      "name": "Mai Thị Lan Anh",
+      "position": "Phó Giám đốc Điều hành/Phụ trách Công bố thông tin",
+      "quantity": 9209.0,
+      "pct": 5.4e-06
+    }
+  ]
+}

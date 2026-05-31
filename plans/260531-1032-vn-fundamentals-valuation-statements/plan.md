@@ -23,8 +23,11 @@ correct upstream sources + absorbs endpoint drift. No standing service (rejected
 - **IN:** Valuation snapshot (P/E, P/B, ROE, EPS, market cap, dividend yield) + financial-
   statement summary ratios (income/balance/cashflow). SQLite cache + nightly refresh.
   REST `GET /api/fundamentals/:symbol`. Valuation + Financials tabs on TickerDetailPanel.
-- **OUT (future phases):** ownership/insider deals, dividend/corporate-action calendar,
-  fundamental screener, council `analystFundamental` wiring.
+- **PHASE 2 (Phase 04, in progress):** ownership — major shareholders + officers +
+  ownership structure (foreign/state/free-float %). Insider deals dropped (no free data
+  source in vnstock 4.0.4). See `phase-04-ownership.md`.
+- **OUT (future phases):** dividend/corporate-action calendar, fundamental screener,
+  council `analystFundamental` wiring, insider deals (needs paid/alt source).
 
 ## Prerequisite
 
@@ -50,6 +53,7 @@ commits before this work starts. Tracked separately; not part of these phases.
 | 01 | vnstock CLI Script + TS Client + Types | Done | — |
 | 02 | SQLite Cache + Nightly Refresh | Done | 01 |
 | 03 | REST Route + TickerDetailPanel Tabs | Done | 02 |
+| 04 | Ownership (shareholders + officers + structure) | Done | 03 |
 
 ## Key risks
 
@@ -124,3 +128,21 @@ Deviations from plan assumptions (none reverse a user decision; all surfaced):
 
 Code review verdict: **SHIP**. Live smoke test spawns the real script (skips when python
 absent in CI).
+
+### Session 3 — Build Phase 04 Ownership (2026-05-31)
+
+Implemented ownership milestone. 99/99 tests pass, tsc clean (server + web). Review: **SHIP**.
+
+- **Insider deals DROPPED** — vnstock 4.0.4 `insider_trading`/`ownership` raise
+  NotImplementedError on VCI; KBS `insider_trading` returns empty. No free data source.
+  Scope = shareholders + officers + structure only (foreign/state/free-float %).
+- New: `vnstock-ownership.py`, `python-runner.ts` (extracted shared spawn), `ownership-types.ts`,
+  `ownership-client.ts` (`OwnershipError`), `ownership-store.ts` (table `ownership`),
+  `TickerOwnership.tsx`, + "Sở hữu" tab. Route `GET /api/ownership/:symbol`.
+- **DRY refactor of shipped Phase 1 code (backward-compatible, regression-tested):**
+  `refresh.ts` → generics `<T>` over `SymbolCache<T>`/`SymbolFetcher<T>` (fetcher now required);
+  `route.ts` → generic `registerSymbolCacheRoute<T>` (path+label+fetcher); `vnstock-client.ts`
+  default runner delegates to `python-runner`. Fixed an unhandled-rejection bug in the
+  in-flight dedup (cleanup moved from `pending.finally()` to handler `try/finally`).
+- Nightly cron now refreshes both fundamentals + ownership for the watchlist.
+- Data source unchanged (VCI, vnstock 4.0.4); Docker copies the ownership script too.

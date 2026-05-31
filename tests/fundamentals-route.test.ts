@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FundamentalsStore } from "../src/server/fundamentals/fundamentals-store.js";
-import { registerFundamentalsRoute } from "../src/server/fundamentals/route.js";
+import { registerSymbolCacheRoute } from "../src/server/fundamentals/route.js";
 import type { Fundamentals } from "../src/server/fundamentals/types.js";
 
 let tmpDir: string;
@@ -53,7 +53,9 @@ describe("GET /api/fundamentals/:symbol", () => {
     const store = new FundamentalsStore();
     store.set("FPT", sample("FPT"));
     let fetched = false;
-    registerFundamentalsRoute(app, {
+    registerSymbolCacheRoute(app, {
+      path: "/api/fundamentals/:symbol",
+      label: "fundamentals",
       store,
       ttlSec: 3600,
       fetcher: async (s) => {
@@ -73,7 +75,9 @@ describe("GET /api/fundamentals/:symbol", () => {
 
   it("cache miss triggers on-demand fetch then returns + persists", async () => {
     const store = new FundamentalsStore();
-    registerFundamentalsRoute(app, {
+    registerSymbolCacheRoute(app, {
+      path: "/api/fundamentals/:symbol",
+      label: "fundamentals",
       store,
       ttlSec: 3600,
       fetcher: async (s) => sample(s),
@@ -91,7 +95,9 @@ describe("GET /api/fundamentals/:symbol", () => {
   it("rejects a malformed symbol with 400 (no fetch)", async () => {
     const store = new FundamentalsStore();
     let fetched = false;
-    registerFundamentalsRoute(app, {
+    registerSymbolCacheRoute(app, {
+      path: "/api/fundamentals/:symbol",
+      label: "fundamentals",
       store,
       ttlSec: 3600,
       fetcher: async (s) => {
@@ -110,7 +116,9 @@ describe("GET /api/fundamentals/:symbol", () => {
 
   it("upstream failure with no cache → 502", async () => {
     const store = new FundamentalsStore();
-    registerFundamentalsRoute(app, {
+    registerSymbolCacheRoute(app, {
+      path: "/api/fundamentals/:symbol",
+      label: "fundamentals",
       store,
       ttlSec: 3600,
       fetcher: async () => {
@@ -129,7 +137,9 @@ describe("GET /api/fundamentals/:symbol", () => {
   it("stale cache + upstream failure → serves stale", async () => {
     const store = new FundamentalsStore();
     store.set("FPT", sample("FPT"));
-    registerFundamentalsRoute(app, {
+    registerSymbolCacheRoute(app, {
+      path: "/api/fundamentals/:symbol",
+      label: "fundamentals",
       store,
       ttlSec: -1, // force stale
       fetcher: async () => {

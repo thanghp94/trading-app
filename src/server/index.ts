@@ -40,8 +40,11 @@ import { runSignalStudy } from "./signal-study/study-engine.js";
 import { rankWatchlist } from "./scanner/watchlist-scanner.js";
 import { WatchlistStore } from "./scanner/watchlist-store.js";
 import { FundamentalsStore } from "./fundamentals/fundamentals-store.js";
+import { OwnershipStore } from "./fundamentals/ownership-store.js";
 import { refreshSymbols } from "./fundamentals/refresh.js";
-import { registerFundamentalsRoute } from "./fundamentals/route.js";
+import { fetchFundamentals } from "./fundamentals/vnstock-client.js";
+import { fetchOwnership } from "./fundamentals/ownership-client.js";
+import { registerSymbolCacheRoute } from "./fundamentals/route.js";
 import { runScreener } from "./screener/run.js";
 import { getUniverse } from "./scanner/universe.js";
 import { EntradeAdapter } from "./adapters/entrade-adapter.js";
@@ -86,26 +89,37 @@ const backtestRuns = new BacktestRunStore();
 const subscribers = new SubscriberStore();
 const watchlistStore = new WatchlistStore();
 const fundamentalsStore = new FundamentalsStore();
+const ownershipStore = new OwnershipStore();
 const autoExecutor = new AutoExecutor();
 const riskGuards = new RiskGuards(journal);
 
-// Fundamentals cache TTL: one trading day. Refreshed nightly + on cache-miss.
+// Fundamentals/ownership cache TTL: one trading day. Refreshed nightly + on cache-miss.
 const FUNDAMENTALS_TTL_SEC = 24 * 3600;
 
-// Nightly fundamentals refresh for the watchlist (after VN close + daily digest).
+// Nightly refresh for the watchlist (after VN close + daily digest).
 cron.schedule("30 16 * * 1-5", () => {
   const symbols = watchlistStore.list().map((w) => w.symbol);
   if (symbols.length === 0) return;
+  const cronLogger = {
+    info: (m: string) => fastify.log.info(m),
+    warn: (m: string) => fastify.log.warn(m),
+  };
   fastify.log.info(
-    `[cron] Refresh fundamentals cho ${symbols.length} mã watchlist...`,
+    `[cron] Refresh fundamentals + ownership cho ${symbols.length} mã watchlist...`,
   );
   refreshSymbols(symbols, fundamentalsStore, {
-    logger: {
-      info: (m) => fastify.log.info(m),
-      warn: (m) => fastify.log.warn(m),
-    },
+    fetcher: fetchFundamentals,
+    logger: cronLogger,
+    label: "fundamentals",
   }).catch((err: unknown) =>
     fastify.log.error(err, "[cron] Lỗi refresh fundamentals"),
+  );
+  refreshSymbols(symbols, ownershipStore, {
+    fetcher: fetchOwnership,
+    logger: cronLogger,
+    label: "ownership",
+  }).catch((err: unknown) =>
+    fastify.log.error(err, "[cron] Lỗi refresh ownership"),
   );
 });
 fastify.log.info(`[exec] auto-execute mode: ${autoExecutor.getMode()}`);
@@ -1131,9 +1145,19 @@ fastify.get("/api/ticker/:symbol/intraday", async (req, reply) => {
   }
 });
 
-registerFundamentalsRoute(fastify, {
+registerSymbolCacheRoute(fastify, {
+  path: "/api/fundamentals/:symbol",
   store: fundamentalsStore,
   ttlSec: FUNDAMENTALS_TTL_SEC,
+  fetcher: fetchFundamentals,
+  label: "fundamentals",
+});
+registerSymbolCacheRoute(fastify, {
+  path: "/api/ownership/:symbol",
+  store: ownershipStore,
+  ttlSec: FUNDAMENTALS_TTL_SEC,
+  fetcher: fetchOwnership,
+  label: "ownership",
 });
 
 // Node ≥15: unhandled rejections are fatal by default. Log and keep running
