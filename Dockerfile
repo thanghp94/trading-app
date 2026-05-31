@@ -16,10 +16,19 @@ ENV NODE_ENV=production
 
 RUN corepack enable && corepack prepare pnpm@10 --activate
 
+# Fundamentals layer shells out to python3 + vnstock (pinned in requirements.txt).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 python3-pip \
+  && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt ./
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=build /app/dist ./dist
+# The python CLI script is read at runtime (not bundled by tsc/vite).
+COPY scripts/vnstock-fundamentals.py ./scripts/vnstock-fundamentals.py
 
 # Persist SQLite + any future state under /data so a docker volume mount
 # survives image rebuilds.

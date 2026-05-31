@@ -1,6 +1,6 @@
 # VN Fundamentals Suite — Phase 1 (Valuation + Statements)
 
-**Status:** Planning
+**Status:** Implemented — 2026-05-31 (86/86 tests, tsc clean; pending commit)
 **Created:** 2026-05-31
 **Slug:** 260531-1032-vn-fundamentals-valuation-statements
 **Mode:** TDD
@@ -47,9 +47,9 @@ commits before this work starts. Tracked separately; not part of these phases.
 
 | # | Phase | Status | Depends |
 |---|-------|--------|---------|
-| 01 | vnstock CLI Script + TS Client + Types | Todo | — |
-| 02 | SQLite Cache + Nightly Refresh | Todo | 01 |
-| 03 | REST Route + TickerDetailPanel Tabs | Todo | 02 |
+| 01 | vnstock CLI Script + TS Client + Types | Done | — |
+| 02 | SQLite Cache + Nightly Refresh | Done | 01 |
+| 03 | REST Route + TickerDetailPanel Tabs | Done | 02 |
 
 ## Key risks
 
@@ -96,3 +96,31 @@ Phase-01 file renamed `phase-01-tcbs-fundamental-client.md` → `phase-01-vnstoc
 - Statement granularity (quarterly/8) consistent across plan + phase 01 + phase 03.
 - Output JSON contract appears in phase 01 (script + types) only — no duplicate divergent copy.
 - **Result: 0 unresolved contradictions.** Plan eligible for implementation.
+
+### Session 2 — Build (2026-05-31)
+
+Implemented all 3 phases. 86/86 tests pass, `tsc --noEmit` clean (server + web).
+Deviations from plan assumptions (none reverse a user decision; all surfaced):
+
+- **vnstock was NOT pre-installed** (plan validation log claimed "confirmed installed
+  locally" — incorrect). Installed `vnstock==4.0.4` into a project venv `pyvenv/`
+  (gitignored; Homebrew python is PEP 668 externally-managed). `PYTHON_BIN` env points
+  the TS client at it; Dockerfile installs system python3 + `requirements.txt`.
+- **Source = VCI** (vnstock 4.0.4 `Finance` supports only VCI/KBS; no TCBS). Valuation
+  snapshot from `Company.ratio_summary()` latest row (pe/pb/roe/market_cap/dividend_yield);
+  statements from `income_statement`/`balance_sheet`/`cash_flow`.
+- **Statements depth = 4 quarters, not 8.** VCI/KBS free tier caps statement history at
+  4 quarters; script requests 8 (`[:8]`) and stores what's returned. Contract unchanged
+  ("up to 8, most-recent-first"); UI table renders the available quarters.
+- **EPS basis:** `eps_basic_vnd` from the latest income-statement quarter (ratio_summary
+  has no EPS field). P/E is ratio_summary's TTM-style figure → EPS and P/E are on
+  different bases (known, acceptable for a snapshot; flagged by review).
+- **Added `route.ts` registrar** (not in plan's file list) so the `fastify.inject()` test
+  can seed a store + inject the fetcher — matches the repo's `registerChatRoute` idiom.
+- **UI: single "Cơ bản" tab** holds both valuation cards + statements table (one payload,
+  one fetch) rather than two separate tabs. Both surfaced; lazy-fetched on tab open.
+- **Review hardening applied:** symbol regex validation (400 on bad input) + in-flight
+  fetch coalescing on the route; explicit reverse-sort of statement periods in the script.
+
+Code review verdict: **SHIP**. Live smoke test spawns the real script (skips when python
+absent in CI).

@@ -1,6 +1,6 @@
 # Phase 03: REST Route + TickerDetailPanel Tabs
 
-**Priority:** High | **Status:** Todo | **Effort:** Medium
+**Priority:** High | **Status:** Done | **Effort:** Medium
 **Depends on:** Phase 02
 
 ## Overview

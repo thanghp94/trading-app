@@ -1,6 +1,6 @@
 # Phase 02: SQLite Cache + Nightly Refresh
 
-**Priority:** High | **Status:** Todo | **Effort:** Medium
+**Priority:** High | **Status:** Done | **Effort:** Medium
 **Depends on:** Phase 01
 
 ## Overview

@@ -1,0 +1,48 @@
+{
+  "valuation": {
+    "pe": 12.5806735772,
+    "pb": 3.1313177155,
+    "roe": 0.2681591337,
+    "eps": 1460.0,
+    "marketCap": 121971109863600.0,
+    "dividendYield": 0.0
+  },
+  "statements": [
+    {
+      "period": "2026-Q1",
+      "revenue": 12479997206775.0,
+      "grossProfit": 4244889890688.0,
+      "netProfit": 2476789833481.0,
+      "totalAssets": 68586094785217.0,
+      "totalEquity": 40122036570361.0,
+      "operatingCashflow": -2847813717192.0
+    },
+    {
+      "period": "2025-Q4",
+      "revenue": 20225449892881.0,
+      "grossProfit": 7047275086162.0,
+      "netProfit": 2994964817096.0,
+      "totalAssets": 88141991634625.0,
+      "totalEquity": 43748040747539.0,
+      "operatingCashflow": 4108450576803.0
+    },
+    {
+      "period": "2025-Q3",
+      "revenue": 17204521225302.0,
+      "grossProfit": 6518866479010.0,
+      "netProfit": 2901545752650.0,
+      "totalAssets": 82738304930449.0,
+      "totalEquity": 42830523910473.0,
+      "operatingCashflow": 4344020060779.0
+    },
+    {
+      "period": "2025-Q2",
+      "revenue": 16624713040067.0,
+      "grossProfit": 6021040042975.0,
+      "netProfit": 2740271400678.0,
+      "totalAssets": 81266075455371.0,
+      "totalEquity": 39872783325655.0,
+      "operatingCashflow": 4190477000730.0
+    }
+  ]
+}

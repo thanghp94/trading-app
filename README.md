@@ -14,6 +14,20 @@ open http://localhost:5173
 
 You should see a live BTCUSDT 5m chart streaming from Binance.
 
+### Fundamentals data layer (optional, VN equities)
+
+The `GET /api/fundamentals/:symbol` route shells out to a Python `vnstock` script.
+For local dev, create a venv and install the pinned dep:
+
+```bash
+python3 -m venv pyvenv
+./pyvenv/bin/pip install -r requirements.txt   # vnstock==4.0.4
+export PYTHON_BIN=pyvenv/bin/python            # point the server at it
+```
+
+Without it, fundamentals requests return 502 (cache serves stale if present);
+everything else runs normally. The Docker image installs python3 + vnstock itself.
+
 ## Layout
 
 ```

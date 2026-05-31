@@ -39,6 +39,9 @@ import { runPortfolio, type PortfolioRequest } from "./backtest/portfolio.js";
 import { runSignalStudy } from "./signal-study/study-engine.js";
 import { rankWatchlist } from "./scanner/watchlist-scanner.js";
 import { WatchlistStore } from "./scanner/watchlist-store.js";
+import { FundamentalsStore } from "./fundamentals/fundamentals-store.js";
+import { refreshSymbols } from "./fundamentals/refresh.js";
+import { registerFundamentalsRoute } from "./fundamentals/route.js";
 import { runScreener } from "./screener/run.js";
 import { getUniverse } from "./scanner/universe.js";
 import { EntradeAdapter } from "./adapters/entrade-adapter.js";
@@ -82,8 +85,29 @@ const journal = new JournalStore();
 const backtestRuns = new BacktestRunStore();
 const subscribers = new SubscriberStore();
 const watchlistStore = new WatchlistStore();
+const fundamentalsStore = new FundamentalsStore();
 const autoExecutor = new AutoExecutor();
 const riskGuards = new RiskGuards(journal);
+
+// Fundamentals cache TTL: one trading day. Refreshed nightly + on cache-miss.
+const FUNDAMENTALS_TTL_SEC = 24 * 3600;
+
+// Nightly fundamentals refresh for the watchlist (after VN close + daily digest).
+cron.schedule("30 16 * * 1-5", () => {
+  const symbols = watchlistStore.list().map((w) => w.symbol);
+  if (symbols.length === 0) return;
+  fastify.log.info(
+    `[cron] Refresh fundamentals cho ${symbols.length} mã watchlist...`,
+  );
+  refreshSymbols(symbols, fundamentalsStore, {
+    logger: {
+      info: (m) => fastify.log.info(m),
+      warn: (m) => fastify.log.warn(m),
+    },
+  }).catch((err: unknown) =>
+    fastify.log.error(err, "[cron] Lỗi refresh fundamentals"),
+  );
+});
 fastify.log.info(`[exec] auto-execute mode: ${autoExecutor.getMode()}`);
 
 let telegramBot: any = null;
@@ -1105,6 +1129,11 @@ fastify.get("/api/ticker/:symbol/intraday", async (req, reply) => {
   } catch {
     return reply.status(503).send({ error: "fetch failed" });
   }
+});
+
+registerFundamentalsRoute(fastify, {
+  store: fundamentalsStore,
+  ttlSec: FUNDAMENTALS_TTL_SEC,
 });
 
 // Node ≥15: unhandled rejections are fatal by default. Log and keep running

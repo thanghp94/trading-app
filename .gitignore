@@ -13,3 +13,6 @@ data/
 
 # claude-mem auto-generated memory stamps (not source code)
 **/CLAUDE.md
+
+# Local python venv for vnstock fundamentals layer
+pyvenv/

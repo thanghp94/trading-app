@@ -1,6 +1,6 @@
 # Phase 01: vnstock CLI Script + TS Client + Types
 
-**Priority:** High | **Status:** Todo | **Effort:** Medium
+**Priority:** High | **Status:** Done | **Effort:** Medium
 <!-- Updated: Validation Session 1 — pivoted from TS TCBS port to Python vnstock CLI one-shot -->
 
 ## Overview
